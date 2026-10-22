@@ -270,7 +270,9 @@ Premiere warns about a speed effect
     Turn off "Correct recorder drift" and run again, then report it.
 
 The app will not open on another Mac
-    It is unsigned. Right-click the app, choose Open, then Open again.
+    Download builds are signed and notarized. A build you made yourself is not:
+    right-click it, choose Open, then Open again (on macOS 15 and later use
+    System Settings > Privacy & Security > Open Anyway).
 
 
 Bugs, sample projects and testing feedback: {BUG_EMAIL}
