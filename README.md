@@ -23,13 +23,7 @@ phones against one shared clock, keeps its relationships without being re-measur
 Apple silicon, macOS 11 or later. Product page and full help:
 [actioncheese.com/sync.html](https://actioncheese.com/sync.html).
 
-The app isn't signed by Apple yet, so macOS asks once before the first launch:
-
-- **macOS 15 Sequoia and later:** open it, click **Done** on the warning, then go to
-  **System Settings › Privacy & Security**, scroll to *ActionCheese Sync was blocked* and
-  click **Open Anyway**.
-- **macOS 14 and earlier:** right-click the app in Applications, choose **Open**, then
-  **Open** again.
+Signed with Developer ID and notarized by Apple, so it opens like any other app.
 
 ## Requirements
 
@@ -55,8 +49,12 @@ Produces `dist/ActionCheese Sync.app` (~120 MB bundled). To share it:
 ditto -c -k --keepParent "dist/ActionCheese Sync.app" dist/ActionCheeseSync-mac.zip
 ```
 
-The app is unsigned, so on another Mac the first launch needs the steps under
-[Download](#download) (or `xattr -dr com.apple.quarantine "/Applications/ActionCheese Sync.app"`).
+To sign, notarize and zip it for a release (needs the IMGXMEDIA Developer ID certificate
+and a `notarytool` profile, see the script):
+
+```bash
+packaging/sign_and_notarize.sh
+```
 
 The bundle also carries the CLI:
 
