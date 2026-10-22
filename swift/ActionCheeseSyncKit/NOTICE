@@ -1,0 +1,17 @@
+ActionCheeseSyncKit
+Copyright (c) 2026 Gabriel (Focalizat)
+
+Licensed under the MIT License. See the LICENSE file in this directory.
+
+This package is MIT even though the repository that contains it is GPL-3.0.
+That is deliberate, and it is granted by the sole copyright holder of both.
+
+The repository root is GPL-3.0 because the macOS desktop app there bundles a
+Homebrew build of ffmpeg, which is GPL-bound. This package has no ffmpeg
+dependency and no third-party dependencies of any kind -- it decodes with
+AVFoundation and computes with Accelerate -- so nothing obliges it to be GPL.
+
+MIT is what allows an App Store application to link this package. GPLv3 cannot
+be satisfied under Apple's Licensed Application EULA; MIT can.
+
+See LICENSING.md at the repository root for the full reasoning.
