@@ -19,6 +19,7 @@ import threading
 import time
 import json
 import os
+import subprocess
 import tkinter as tk
 import traceback
 import urllib.parse
@@ -123,8 +124,10 @@ class SyncApp:
         self.root = root
 
         #: Inputs, in the order they were added: .xml timelines and folders,
-        #: mixed freely. The list is the model; the listbox only shows it.
-        self.inputs: list[Path] = []
+        #: mixed freely. An entry is a single path, or a list of folders
+        #: standing for one camera that filled several cards. The list is the
+        #: model; the listbox only shows it.
+        self.inputs: list = []
         self.output_path = tk.StringVar()
         self.trust_synced = tk.BooleanVar(value=False)
         self._prefs = _load_prefs()
@@ -428,6 +431,8 @@ class SyncApp:
                                      command=self.input_list.yview)
         input_scroll.grid(row=0, column=1, sticky="ns")
         self.input_list.configure(yscrollcommand=input_scroll.set)
+        self.input_list.bind("<<ListboxSelect>>",
+                             lambda _e: self._update_merge_button())
 
         buttons = ttk.Frame(files)
         buttons.grid(row=0, column=1, sticky="n", padx=(8, 0))
@@ -435,12 +440,18 @@ class SyncApp:
                    ).grid(row=0, column=0, sticky="ew")
         ttk.Button(buttons, text="Add folder…", command=self._choose_folder, width=12
                    ).grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.merge_button = ttk.Button(buttons, text="Merge",
+                                       command=self._merge_inputs, width=12)
+        self.merge_button.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        self.merge_button.state(["disabled"])
         ttk.Button(buttons, text="Remove", command=self._remove_inputs, width=12
-                   ).grid(row=2, column=0, sticky="ew", pady=(4, 0))
+                   ).grid(row=3, column=0, sticky="ew", pady=(4, 0))
 
         ttk.Label(files,
-                  text="One folder per camera or recorder. An ActionCheese shoot folder "
-                       "brings its cameras in already in sync.",
+                  text="One folder per camera or recorder. Pick several at once. "
+                       "An ActionCheese shoot folder brings its cameras in already "
+                       "in sync. Select two folders and press Merge if one camera "
+                       "filled both cards.",
                   foreground="#94A3B8", wraplength=620, justify="left"
                   ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
@@ -665,20 +676,88 @@ class SyncApp:
         chosen = filedialog.askopenfilenames(
             title="Choose Final Cut Pro XML timelines",
             filetypes=[("Final Cut Pro XML", "*.xml"), ("All files", "*.*")],
+            initialdir=self._last_dir() or "",
         )
-        self._add_inputs([Path(c) for c in chosen])
+        picked = [Path(c) for c in chosen]
+        if picked:
+            self._remember_dir(picked[0])
+        self._add_inputs(picked)
+
+    def _last_dir(self) -> Optional[str]:
+        """Where the last input came from, if that place still exists."""
+        remembered = self._prefs.get("last_dir")
+        if remembered and Path(remembered).is_dir():
+            return remembered
+        return None
+
+    def _remember_dir(self, path: Path) -> None:
+        folder = path if path.is_dir() else path.parent
+        # The *parent* of a camera folder, so the next dialog opens on the
+        # shoot and its other cameras are one click away rather than one
+        # navigation. Picking cam1 then cam2 then cam3 out of the same shoot
+        # is the common case and it should not mean re-walking the tree.
+        parent = folder.parent if folder.parent != folder else folder
+        self._prefs["last_dir"] = str(parent)
+        _save_prefs(self._prefs)
+
+    def _choose_folders_macos(self) -> list[Path]:
+        """Several folders in one go, via the system panel.
+
+        Tk's own directory chooser takes one folder at a time on every
+        platform, and on a shoot with four cameras that is four trips through
+        the same dialog. AppleScript's chooser does support a multiple
+        selection, so on macOS we ask it instead and fall back to Tk if it is
+        refused or unavailable.
+        """
+        location = self._last_dir()
+        default = f'default location (POSIX file "{location}")' if location else ""
+        script = (
+            'set picked to choose folder with prompt '
+            '"Choose camera folders, or an ActionCheese shoot folder" '
+            f'{default} with multiple selections allowed\n'
+            'set out to ""\n'
+            'repeat with item_ in picked\n'
+            '  set out to out & POSIX path of item_ & linefeed\n'
+            'end repeat\n'
+            'return out'
+        )
+        try:
+            done = subprocess.run(["osascript", "-e", script],
+                                  capture_output=True, text=True, timeout=600)
+        except Exception:  # noqa: BLE001 - fall back to Tk on any failure
+            return []
+        if done.returncode != 0:
+            return []        # cancelled, or no osascript
+        return [Path(line) for line in done.stdout.splitlines() if line.strip()]
 
     def _choose_folder(self) -> None:
-        chosen = filedialog.askdirectory(
-            title="Choose a camera folder, or an ActionCheese shoot folder")
+        chosen: list[Path] = []
+        if sys.platform == "darwin":
+            chosen = self._choose_folders_macos()
+        if not chosen:
+            one = filedialog.askdirectory(
+                title="Choose a camera folder, or an ActionCheese shoot folder",
+                initialdir=self._last_dir() or "")
+            chosen = [Path(one)] if one else []
         if chosen:
-            self._add_inputs([Path(chosen)])
+            self._remember_dir(chosen[0])
+            self._add_inputs(chosen)
+
+    @staticmethod
+    def _members(entry) -> list[Path]:
+        """An entry's paths, whether it is one or a merged group."""
+        return list(entry) if isinstance(entry, list) else [entry]
+
+    def _claimed(self) -> set[Path]:
+        return {p.resolve() for entry in self.inputs for p in self._members(entry)}
 
     def _add_inputs(self, paths: list[Path]) -> None:
         added = False
+        claimed = self._claimed()
         for path in paths:
-            if any(p.resolve() == path.resolve() for p in self.inputs):
+            if path.resolve() in claimed:
                 continue
+            claimed.add(path.resolve())
             self.inputs.append(path)
             added = True
         if not added:
@@ -686,7 +765,7 @@ class SyncApp:
         self._refresh_inputs()
         # Name the output after the first input, which is the one the operator
         # thinks of as "the project".
-        first = self.inputs[0]
+        first = self._members(self.inputs[0])[0]
         suffix = self.suffix.get() or "_synced"
         stem = first.stem if first.is_file() else first.name
         self.output_path.set(str(first.with_name(f"{stem}{suffix}.xml")
@@ -706,9 +785,54 @@ class SyncApp:
 
     def _refresh_inputs(self) -> None:
         self.input_list.delete(0, "end")
-        for path in self.inputs:
-            mark = "folder" if path.is_dir() else "xml"
-            self.input_list.insert("end", f"[{mark}]  {path}")
+        for entry in self.inputs:
+            if isinstance(entry, list):
+                names = " + ".join(p.name for p in entry)
+                self.input_list.insert("end", f"[1 camera]  {entry[0].parent}  ->  {names}")
+            else:
+                mark = "folder" if entry.is_dir() else "xml"
+                self.input_list.insert("end", f"[{mark}]  {entry}")
+        self._update_merge_button()
+
+    def _update_merge_button(self) -> None:
+        """One button, two jobs, named for whichever it would do now."""
+        selected = [self.inputs[i] for i in self.input_list.curselection()]
+        splitting = len(selected) == 1 and isinstance(selected[0], list)
+        self.merge_button.configure(text="Split" if splitting else "Merge")
+        usable = splitting or (len(selected) > 1
+                               and all(p.is_dir() for e in selected
+                                       for p in self._members(e)))
+        self.merge_button.state(["!disabled"] if usable else ["disabled"])
+
+    def _merge_inputs(self) -> None:
+        """Combine the selected folders into one camera, or split one back.
+
+        For a camera that filled several cards: read separately they would be
+        separate devices, and clips from one device are never matched against
+        each other -- a rule that has to hold across the card boundary too.
+        """
+        positions = sorted(self.input_list.curselection())
+        if not positions:
+            return
+        selected = [self.inputs[i] for i in positions]
+
+        if len(selected) == 1 and isinstance(selected[0], list):
+            parts = selected[0]
+            self.inputs[positions[0]:positions[0] + 1] = list(parts)
+        else:
+            if any(not p.is_dir() for entry in selected for p in self._members(entry)):
+                messagebox.showwarning(
+                    "Cannot merge",
+                    "Only folders can be merged into one camera. A timeline has "
+                    "to stay an input of its own.")
+                return
+            folders = [p for entry in selected for p in self._members(entry)]
+            for index in reversed(positions):
+                del self.inputs[index]
+            self.inputs.insert(positions[0], folders)
+
+        self._refresh_inputs()
+        self._preview()
 
     def _preview(self) -> None:
         """Draw what was chosen straight away, before any sync runs.

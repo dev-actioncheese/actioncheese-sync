@@ -87,6 +87,7 @@ class TestOptionMapping:
         monkeypatch.setattr(app, "_preview", lambda: None)
         monkeypatch.setattr("syncmyvids.gui.filedialog.askopenfilenames",
                             lambda **_: (str(timeline),))
+        monkeypatch.setattr(app, "_choose_folders_macos", lambda: [])
         monkeypatch.setattr("syncmyvids.gui.filedialog.askdirectory",
                             lambda **_: str(camera))
         app._choose_input()
@@ -100,6 +101,7 @@ class TestOptionMapping:
         camera = tmp_path / "camera-a"
         camera.mkdir()
         monkeypatch.setattr(app, "_preview", lambda: None)
+        monkeypatch.setattr(app, "_choose_folders_macos", lambda: [])
         monkeypatch.setattr("syncmyvids.gui.filedialog.askdirectory", lambda **_: str(camera))
         app._choose_folder()
         app._choose_folder()
@@ -414,3 +416,110 @@ class TestNothingIsInvisible:
                 continue
             ratio = self._contrast(app.root, background, foreground)
             assert ratio >= 1.8, f"{name} disabled: {ratio:.2f}:1 is invisible, not dim"
+
+
+class TestMergingFoldersIntoOneCamera:
+    """One camera that filled several cards is still one camera.
+
+    Read as separate devices its cards would be matched against each other,
+    which breaks the rule the whole solver leans on: a device cannot record
+    two things at once.
+    """
+
+    def folders(self, tmp_path: Path) -> list[Path]:
+        made = []
+        for name in ("card1", "card2", "other"):
+            folder = tmp_path / "cam-one" / name if name != "other" else tmp_path / "other"
+            folder.mkdir(parents=True)
+            made.append(folder)
+        return made
+
+    def prepared(self, app, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(app, "_preview", lambda: None)
+        app._add_inputs(self.folders(tmp_path))
+        return app
+
+    def test_selected_folders_become_one_entry(self, app, tmp_path: Path, monkeypatch) -> None:
+        self.prepared(app, tmp_path, monkeypatch)
+        app.input_list.selection_set(0, 1)
+        app._merge_inputs()
+        assert len(app.inputs) == 2
+        assert isinstance(app.inputs[0], list) and len(app.inputs[0]) == 2
+        assert not isinstance(app.inputs[1], list), "the third folder is untouched"
+
+    def test_merging_keeps_the_order_it_was_added_in(self, app, tmp_path: Path,
+                                                     monkeypatch) -> None:
+        self.prepared(app, tmp_path, monkeypatch)
+        names = [p.name for p in app.inputs[:2]]
+        app.input_list.selection_set(0, 1)
+        app._merge_inputs()
+        assert [p.name for p in app.inputs[0]] == names
+
+    def test_a_merged_entry_splits_back(self, app, tmp_path: Path, monkeypatch) -> None:
+        self.prepared(app, tmp_path, monkeypatch)
+        app.input_list.selection_set(0, 1)
+        app._merge_inputs()
+        app.input_list.selection_clear(0, "end")
+        app.input_list.selection_set(0)
+        app._merge_inputs()
+        assert len(app.inputs) == 3
+        assert not any(isinstance(e, list) for e in app.inputs)
+
+    def test_the_button_names_what_it_would_do(self, app, tmp_path: Path,
+                                               monkeypatch) -> None:
+        self.prepared(app, tmp_path, monkeypatch)
+        app.input_list.selection_set(0, 1)
+        app._update_merge_button()
+        assert app.merge_button.cget("text") == "Merge"
+        app._merge_inputs()
+        app.input_list.selection_clear(0, "end")
+        app.input_list.selection_set(0)
+        app._update_merge_button()
+        assert app.merge_button.cget("text") == "Split"
+
+    def test_a_timeline_cannot_be_half_a_camera(self, app, tmp_path: Path,
+                                                monkeypatch) -> None:
+        warned: list[str] = []
+        monkeypatch.setattr("syncmyvids.gui.messagebox.showwarning",
+                            lambda title, msg: warned.append(title))
+        monkeypatch.setattr(app, "_preview", lambda: None)
+        timeline = tmp_path / "a.xml"
+        timeline.write_text("<xmeml/>", encoding="utf-8")
+        folder = tmp_path / "cam"
+        folder.mkdir()
+        app._add_inputs([timeline, folder])
+        app.input_list.selection_set(0, 1)
+        app._merge_inputs()
+        assert warned == ["Cannot merge"]
+        assert not any(isinstance(e, list) for e in app.inputs)
+
+    def test_the_merged_entry_reaches_the_engine_as_one_device(self, app, tmp_path: Path,
+                                                               monkeypatch) -> None:
+        # The GUI's model is handed straight to load_inputs, so the shape it
+        # builds has to be the shape the engine understands.
+        self.prepared(app, tmp_path, monkeypatch)
+        app.input_list.selection_set(0, 1)
+        app._merge_inputs()
+        assert isinstance(app.inputs[0], list)
+        assert all(isinstance(p, Path) for p in app.inputs[0])
+
+
+class TestRememberingWhereYouWere:
+    def test_the_parent_is_remembered_not_the_folder(self, app, tmp_path: Path,
+                                                     monkeypatch) -> None:
+        # Cameras sit side by side under one shoot folder, so the next dialog
+        # should open on the shoot, not inside the camera just chosen.
+        saved: list[dict] = []
+        monkeypatch.setattr("syncmyvids.gui._save_prefs", lambda v: saved.append(v))
+        shoot = tmp_path / "shoot"
+        (shoot / "cam1").mkdir(parents=True)
+        app._remember_dir(shoot / "cam1")
+        assert saved[-1]["last_dir"] == str(shoot)
+
+    def test_a_vanished_location_is_not_offered(self, app, tmp_path: Path) -> None:
+        app._prefs["last_dir"] = str(tmp_path / "gone")
+        assert app._last_dir() is None
+
+    def test_a_live_location_is_offered(self, app, tmp_path: Path) -> None:
+        app._prefs["last_dir"] = str(tmp_path)
+        assert app._last_dir() == str(tmp_path)

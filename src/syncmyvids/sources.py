@@ -28,7 +28,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, Sequence
 
 from .errors import SyncMyVidsError
 from .metadata import MediaInfo, probe
@@ -391,7 +391,48 @@ def read_actioncheese_folder(folder: Path, *,
     return devices, warnings, markers
 
 
-def ingest(paths: Iterable[Path | str], *,
+def read_merged_folders(folders: list[Path], *,
+                       progress: Optional[Callable[[str], None]] = None
+                       ) -> tuple[Device, list[str]]:
+    """Several folders, one device.
+
+    For a camera that filled more than one card. Treating the cards as
+    separate devices would be wrong in a way that matters: clips from one
+    device are never matched against each other, on the sound principle that a
+    camera cannot record two things at once, and that principle has to hold
+    across the card boundary too.
+
+    Naming: cards for one camera usually sit side by side under a folder named
+    for that camera, so when every folder shares a parent the parent names the
+    device -- "cam-one", not "card1". Otherwise the first folder names it,
+    since a track label has to be short and the operator chose the order.
+    """
+    warnings: list[str] = []
+    clips: list[SourceClip] = []
+    if not folders:
+        return Device(name="Camera", origin="folder"), warnings
+
+    parents = {f.resolve().parent for f in folders}
+    if len(folders) > 1 and len(parents) == 1:
+        name = _device_name(parents.pop())
+    else:
+        name = _device_name(folders[0])
+
+    for folder in folders:
+        device, notes = read_camera_folder(folder, name=name, progress=progress)
+        clips.extend(device.clips)
+        warnings.extend(notes)
+
+    if len(folders) > 1:
+        warnings.append(
+            f"{name}: {len(folders)} folders read as one camera "
+            f"({', '.join(f.name for f in folders)})")
+
+    clips.sort(key=lambda c: (c.started is None, c.started or 0.0, c.name))
+    return Device(name=name, clips=clips, origin="folder"), warnings
+
+
+def ingest(paths: Iterable[Path | str | Sequence[Path | str]], *,
            progress: Optional[Callable[[str], None]] = None) -> Ingest:
     """Read every input into a flat list of devices.
 
@@ -401,6 +442,22 @@ def ingest(paths: Iterable[Path | str], *,
     result = Ingest()
     seen: set[Path] = set()
     for raw in paths:
+        # A group of folders standing for one camera arrives as a sequence.
+        if isinstance(raw, (list, tuple, set)):
+            folders = [Path(p).expanduser() for p in raw]
+            if not folders:
+                continue
+            if len(folders) == 1:
+                raw = folders[0]
+            else:
+                for folder in folders:
+                    seen.add(folder.resolve())
+                device, warnings = read_merged_folders(folders, progress=progress)
+                if device.clips:
+                    result.devices.append(device)
+                result.warnings.extend(warnings)
+                continue
+
         path = Path(raw).expanduser()
         resolved = path.resolve()
         if resolved in seen:

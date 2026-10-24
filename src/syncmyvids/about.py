@@ -102,7 +102,18 @@ Add your material -- any mix of the three -- and press Sync:
   A camera folder   One folder per camera or recorder. Card structure does not
                  matter; everything under the folder is that one device. Sony
                  cards are read from their own clip sidecars, which know
-                 exactly when each take started.
+                 exactly when each take started. Pick several folders at once,
+                 and the next dialog opens where the last one left off, so a
+                 shoot's cameras are one click apart rather than one walk
+                 through the tree.
+
+  One camera, several cards   Select its folders in the list and press Merge.
+                 They become a single camera, which matters for more than
+                 tidiness: clips from one device are never matched against
+                 each other, on the principle that a camera cannot record two
+                 things at once, and that has to hold across the card boundary
+                 too. Press Split to undo it. On the command line this is
+                 --merge, once per camera.
   An ActionCheese shoot folder   The whole day, as the remote app wrote it.
                  Every phone comes in as its own camera, already in sync with
                  the others, and any camera cards you dropped inside the shoot

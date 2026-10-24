@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sync = subparsers.add_parser("sync", help="synchronise a timeline")
-    sync.add_argument("input", type=Path, nargs="+", metavar="INPUT",
+    sync.add_argument("input", type=Path, nargs="*", metavar="INPUT",
                       help="one or more .xml timelines exported from your NLE, and/or "
                            "folders -- one per camera or recorder. An ActionCheese shoot "
                            "folder is recognised and its clips kept in sync with each other.")
@@ -95,6 +95,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--drift-min-duration", type=float, default=300.0, metavar="SECONDS",
                       help="shortest clip eligible for drift analysis (default: %(default)s)")
 
+    sync.add_argument("--merge", type=Path, nargs="+", action="append",
+                      metavar="FOLDER",
+                      help="treat these folders as one camera, for a camera that "
+                           "filled several cards. Repeat for each camera: "
+                           "--merge cam1/card1 cam1/card2 --merge cam2/card1")
     sync.add_argument("--rate", type=float, metavar="FPS",
                       help="frame rate for a timeline built from folders "
                            "(default: whatever most of the footage was shot at)")
@@ -109,7 +114,9 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="skip sub-sample GCC-PHAT refinement")
 
     probe = subparsers.add_parser("probe", help="show what the inputs contain, without analysing")
-    probe.add_argument("input", type=Path, nargs="+", metavar="INPUT")
+    probe.add_argument("input", type=Path, nargs="*", metavar="INPUT")
+    probe.add_argument("--merge", type=Path, nargs="+", action="append",
+                       metavar="FOLDER", help="folders to read as one camera")
 
     subparsers.add_parser("guide", help="how to use syncmyvids, and what each option does")
     subparsers.add_parser("about", help="version, author and how to report a bug")
@@ -137,7 +144,8 @@ def _rate_from_flag(value: float | None) -> Rate | None:
 def _command_probe(args: argparse.Namespace) -> int:
     # Folders have to be read before they can be shown, so probe goes through
     # the same loader as sync -- what it prints is exactly what sync will use.
-    loaded = load_inputs(args.input, rate=_rate_from_flag(getattr(args, "rate", None)))
+    inputs = list(args.input) + [group for group in (getattr(args, "merge", None) or [])]
+    loaded = load_inputs(inputs, rate=_rate_from_flag(getattr(args, "rate", None)))
     for warning in loaded.warnings:
         print(f"note: {warning}", file=sys.stderr)
     timeline = loaded.timeline
@@ -172,7 +180,8 @@ def _command_sync(args: argparse.Namespace) -> int:
 
     ffmpeg.ensure_available()
 
-    loaded = load_inputs(args.input, sequence_name=args.sequence_name,
+    inputs = list(args.input) + [group for group in (args.merge or [])]
+    loaded = load_inputs(inputs, sequence_name=args.sequence_name,
                          rate=_rate_from_flag(args.rate),
                          progress=lambda message: print(message, file=sys.stderr))
     timeline = loaded.timeline

@@ -149,13 +149,34 @@ def load_inputs(paths, *, sequence_name: Optional[str] = None,
     their in and out points and their positions, but not effects or labels
     that were on them.
     """
-    paths = [Path(p).expanduser() for p in paths]
-    if not paths:
+    # An entry may be a single path, or a group of folders standing for one
+    # camera that filled several cards.
+    entries: list = []
+    for item in paths:
+        if isinstance(item, (list, tuple, set)):
+            group = [Path(p).expanduser() for p in item]
+            entries.append(group[0] if len(group) == 1 else group)
+        else:
+            entries.append(Path(item).expanduser())
+    if not entries:
         raise SyncMyVidsError("no input given")
 
-    kinds = {p: sources_module.classify(p) for p in paths}
-    timelines = [p for p in paths if kinds[p] == "timeline"]
-    folders = [p for p in paths if kinds[p] != "timeline"]
+    timelines: list[Path] = []
+    folders: list = []
+    for entry in entries:
+        if isinstance(entry, list):
+            # Every member has to be a folder; a timeline cannot be half of a
+            # camera, and silently ignoring one would lose its clips.
+            for member in entry:
+                if sources_module.classify(member) == "timeline":
+                    raise SyncMyVidsError(
+                        f"{member.name}: a timeline cannot be merged into a camera. "
+                        "Add it as an input of its own.")
+            folders.append(entry)
+        elif sources_module.classify(entry) == "timeline":
+            timelines.append(entry)
+        else:
+            folders.append(entry)
 
     for path in timelines:
         if _is_actioncheese_export(path):
@@ -202,7 +223,10 @@ def load_inputs(paths, *, sequence_name: Optional[str] = None,
     if base_rate is None:
         base_rate = sources_module.common_rate(devices)
     if base_name is None:
-        base_name = folders[0].name if folders else "Timeline"
+        first = folders[0] if folders else None
+        if isinstance(first, list):
+            first = first[0]
+        base_name = first.name if first is not None else "Timeline"
 
     built = fcp7_build.build(devices, rate=base_rate, name=base_name,
                              markers=shoot_markers)
