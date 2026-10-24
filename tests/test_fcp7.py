@@ -363,3 +363,46 @@ class TestPaths:
         reread = [f for f in timeline.tree.getroot().iter("file")
                   if f.findtext("name") == "rec.wav"][0]
         assert fcp7.pathurl_to_path(reread.findtext("pathurl")) == media_root / "rec.wav"
+
+
+class TestWindowsPathurls:
+    """A timeline written on Windows must open on any machine, and vice versa.
+
+    The failure this guards against is silent: leave the leading slash on
+    "/C:/Media/x" and the result is a *relative* path with no drive, so every
+    clip reports as missing and nothing syncs at all. Write a Windows path
+    without translating it and the exported XML relinks nothing, while
+    importing without complaint.
+    """
+
+    def test_a_drive_letter_survives_reading(self) -> None:
+        for url in ("file://localhost/C:/Footage/Cam A/A001.MP4",
+                    "file:///C:/Footage/Cam%20A/A001.MP4"):
+            path = fcp7.pathurl_to_path(url)
+            assert str(path) == r"C:\Footage\Cam A\A001.MP4", url
+
+    def test_a_drive_letter_survives_writing(self) -> None:
+        url = fcp7.path_to_pathurl(Path(r"C:\Footage\Cam A\A001.MP4"))
+        assert url == "file://localhost/C:/Footage/Cam%20A/A001.MP4"
+        assert "%3A" not in url, "an encoded drive colon does not relink"
+        assert "\\" not in url, "backslashes in a URL do not relink"
+
+    def test_a_unc_share_keeps_both_slashes(self) -> None:
+        for url in ("file://localhost//nas01/media/IMG_0075.mov",
+                    "file://nas01/media/IMG_0075.mov"):
+            assert str(fcp7.pathurl_to_path(url)) == "//nas01/media/IMG_0075.mov", url
+
+    def test_posix_paths_are_untouched(self) -> None:
+        # The macOS behaviour this replaced must not have moved.
+        assert fcp7.pathurl_to_path("file://localhost/Volumes/T7/a.mov") == Path("/Volumes/T7/a.mov")
+        assert fcp7.pathurl_to_path("file:///Volumes/T7/a.mov") == Path("/Volumes/T7/a.mov")
+        assert (fcp7.path_to_pathurl(Path("/Volumes/T7/take one.mov"))
+                == "file://localhost/Volumes/T7/take%20one.mov")
+
+    def test_a_windows_path_round_trips(self) -> None:
+        url = "file://localhost/C:/Footage/Cam%20A/A001.MP4"
+        assert fcp7.path_to_pathurl(fcp7.pathurl_to_path(url)) == url
+
+    def test_a_posix_path_round_trips(self) -> None:
+        url = "file://localhost/Volumes/T7/take%20one.mov"
+        assert fcp7.path_to_pathurl(fcp7.pathurl_to_path(url)) == url

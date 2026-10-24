@@ -11,6 +11,7 @@ Both views are drawn to a shared time scale so the two are directly comparable.
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,6 +50,23 @@ PIT_MIN_WIDTH = 26
 #: Drawn around every clip so butted clips read as separate files.  Without it
 #: eighteen takes laid end to end look like one continuous recording.
 COLOUR_EDGE = "#14161C"
+
+def _font_families() -> tuple[str, str]:
+    """The UI and monospace faces this platform actually has.
+
+    Menlo and Helvetica are macOS fonts. Asking for them elsewhere does not
+    fail -- Tk quietly substitutes something -- but what it substitutes is
+    rarely what the layout was measured against, so the window comes out
+    looking subtly wrong rather than broken, which is harder to notice.
+    """
+    if sys.platform == "darwin":
+        return "Helvetica", "Menlo"
+    if sys.platform == "win32":
+        return "Segoe UI", "Consolas"
+    return "DejaVu Sans", "DejaVu Sans Mono"
+
+
+UI_FONT, MONO_FONT = _font_families()
 
 ROW_HEIGHT = 30
 ROW_GAP = 2
@@ -409,7 +427,7 @@ class TimelineCanvas(ttk.Frame):
         if snap is None or not snap.tracks:
             canvas.create_text(GUTTER, 20, anchor="w", fill=COLOUR_TEXT,
                                text="run a sync to see the timeline",
-                               font=("Helvetica", 11))
+                               font=(UI_FONT, 11))
             return
 
         width = max(canvas.winfo_width(), 200)
@@ -419,7 +437,7 @@ class TimelineCanvas(ttk.Frame):
         for x, text in ticks:
             canvas.create_line(x, RULER_HEIGHT - 4, x, RULER_HEIGHT, fill=COLOUR_GRID)
             canvas.create_text(x + 2, RULER_HEIGHT - 10, anchor="w", text=text,
-                               fill=COLOUR_TEXT, font=("Menlo", 8))
+                               fill=COLOUR_TEXT, font=(MONO_FONT, 8))
 
         row = 0
         for rect in rects:
@@ -442,7 +460,7 @@ class TimelineCanvas(ttk.Frame):
             if rect.kind == "row":
                 canvas.create_text(GUTTER - 6, (rect.y0 + rect.y1) / 2, anchor="e",
                                    text=snap.tracks[row].label, fill=COLOUR_TEXT,
-                                   font=("Menlo", 9))
+                                   font=(MONO_FONT, 9))
                 row += 1
             elif rect.clip is not None:
                 self._boxes.append((int(rect.x0), int(rect.y0), int(rect.x1),

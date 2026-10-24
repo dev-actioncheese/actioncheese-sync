@@ -52,6 +52,11 @@ def _bundled(name: str) -> Optional[str]:
     A packaged app cannot assume the recipient has ffmpeg installed, so the
     bundle may carry its own copy; PyInstaller unpacks it to ``sys._MEIPASS``.
     """
+    # Windows calls them ffmpeg.exe and ffprobe.exe, and a bundle built there
+    # carries that name. Looking only for the bare name finds nothing, and the
+    # app then reports ffmpeg as missing on a machine that is carrying it.
+    names = [f"{name}.exe", name] if sys.platform == "win32" else [name]
+
     roots: list[Path] = []
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
@@ -62,9 +67,12 @@ def _bundled(name: str) -> Optional[str]:
         roots += [executable, executable.parent / "Resources"]
 
     for root in roots:
-        candidate = root / name
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
+        for candidate_name in names:
+            candidate = root / candidate_name
+            # Windows has no execute bit; os.access(X_OK) is true for any
+            # readable file there, which is the answer we want anyway.
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
     return None
 
 

@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import json
+import os
 import tkinter as tk
 import traceback
 import urllib.parse
@@ -35,6 +36,7 @@ from .formats import fcp7
 from .timelineview import (
     COLOUR_BG, COLOUR_GRID, COLOUR_MARKER, COLOUR_ROW, COLOUR_ROW_ALT,
     COLOUR_TEXT, COLOUR_UNSYNCED, COLOUR_VIDEO, COLOUR_WAVE,
+    MONO_FONT, UI_FONT,
     TimelineCanvas, load_peaks, snapshot,
 )
 
@@ -67,8 +69,18 @@ LABEL_COLOURS = [
 #: deliberately not in the project: it is a property of this Mac's copy of the
 #: app, not of any timeline.
 def _prefs_path() -> Path:
-    base = Path.home() / "Library" / "Application Support" / "ActionCheese Sync"
-    return base / "window.json"
+    """Where this machine keeps the window's preferences.
+
+    Each platform has its own convention and ignoring them puts a stray
+    Library folder in a Windows home directory.
+    """
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "ActionCheese Sync" / "window.json"
 
 
 def _load_prefs() -> dict:
@@ -334,7 +346,7 @@ class SyncApp:
         frame.rowconfigure(0, weight=1)
 
         text = tk.Text(frame, wrap="word", width=width, height=height,
-                       font=("Menlo", 11), padx=10, pady=8)
+                       font=(MONO_FONT, 11), padx=10, pady=8)
         text.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
         scroll.grid(row=0, column=1, sticky="ns")
@@ -394,7 +406,7 @@ class SyncApp:
             except tk.TclError:  # pragma: no cover - depends on the Tk build
                 pass
         ttk.Label(header, text=about.APP_NAME, foreground=CHEESE,
-                  font=("Helvetica", 17, "bold")).grid(row=0, column=1, sticky="sw")
+                  font=(UI_FONT, 17, "bold")).grid(row=0, column=1, sticky="sw")
         ttk.Label(header, text=about.TAGLINE, foreground=INK_DIM
                   ).grid(row=1, column=1, sticky="nw")
 
@@ -410,7 +422,7 @@ class SyncApp:
             exportselection=False, background=PANEL, foreground=INK,
             selectbackground=CHEESE, selectforeground=CHEESE_DARK,
             highlightthickness=1, highlightbackground=COLOUR_GRID,
-            highlightcolor=CHEESE, borderwidth=0, font=("Menlo", 11))
+            highlightcolor=CHEESE, borderwidth=0, font=(MONO_FONT, 11))
         self.input_list.grid(row=0, column=0, sticky="ew")
         input_scroll = ttk.Scrollbar(listbox_frame, orient="vertical",
                                      command=self.input_list.yview)
@@ -535,7 +547,7 @@ class SyncApp:
         log_tab.rowconfigure(0, weight=1)
 
         self.log = tk.Text(log_tab, height=16, wrap="none", state="disabled",
-                           font=("Menlo", 11), background=COLOUR_BG,
+                           font=(MONO_FONT, 11), background=COLOUR_BG,
                            foreground=INK, insertbackground=CHEESE,
                            selectbackground=CHEESE, selectforeground=CHEESE_DARK,
                            highlightthickness=0, borderwidth=0, padx=8, pady=6)
@@ -571,7 +583,7 @@ class SyncApp:
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(0, weight=1)
         ttk.Label(head, text="ALSO FROM FOCALIZAT", foreground=INK_DIM,
-                  font=("Helvetica", 9)).grid(row=0, column=0, sticky="w")
+                  font=(UI_FONT, 9)).grid(row=0, column=0, sticky="w")
         ttk.Button(head, text="\u203a", width=2, command=self._toggle_sidebar
                    ).grid(row=0, column=1, sticky="e")
 
@@ -586,7 +598,7 @@ class SyncApp:
                 pass
 
         ttk.Label(self.sidebar, text=about.COMPANION_NAME, foreground=CHEESE,
-                  font=("Helvetica", 12, "bold"), wraplength=SIDEBAR_TEXT,
+                  font=(UI_FONT, 12, "bold"), wraplength=SIDEBAR_TEXT,
                   justify="left").grid(row=2, column=0, sticky="w")
         ttk.Label(self.sidebar, text=about.COMPANION_PITCH, foreground=INK,
                   wraplength=SIDEBAR_TEXT, justify="left").grid(
@@ -608,7 +620,7 @@ class SyncApp:
                    style="Cheese.TButton", command=self._open_companion).grid(
                        row=6, column=0, sticky="ew")
         ttk.Label(self.sidebar, text=about.COMPANION_STORE_NOTE, foreground=INK_DIM,
-                  font=("Helvetica", 9)).grid(row=7, column=0, sticky="w", pady=(6, 0))
+                  font=(UI_FONT, 9)).grid(row=7, column=0, sticky="w", pady=(6, 0))
 
         self._apply_sidebar_state()
 

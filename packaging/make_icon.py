@@ -233,6 +233,20 @@ def write_icns(destination: Path) -> bool:
     return True
 
 
+def write_ico(destination: Path) -> None:
+    """Windows wants every size in one .ico file.
+
+    Each size is drawn at its own size rather than downscaled from the master,
+    the same as the .icns, so the simplified small artwork is what Windows
+    shows in the taskbar and the title bar.
+    """
+    sizes = (16, 24, 32, 48, 64, 128, 256)
+    images = [icon_for(size) for size in sizes]
+    images[-1].save(destination, format="ICO",
+                    sizes=[(size, size) for size in sizes],
+                    append_images=images[:-1])
+
+
 def main() -> int:
     ASSETS.mkdir(exist_ok=True)
     master = render()
@@ -244,6 +258,10 @@ def main() -> int:
     banner = Image.new("RGBA", (1200, 320), (0, 0, 0, 0))
     banner.paste(master.resize((256, 256), Image.LANCZOS), (32, 32))
     banner.save(ASSETS / "wordmark.png")
+
+    ico = ROOT / "packaging" / "icon.ico"
+    write_ico(ico)
+    print(f"wrote {ico.relative_to(ROOT)}")
 
     icns = ROOT / "packaging" / "icon.icns"
     if write_icns(icns):

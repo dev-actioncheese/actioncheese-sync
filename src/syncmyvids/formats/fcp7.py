@@ -17,6 +17,7 @@ Two Premiere-specific details matter and are handled here:
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 import uuid
 from pathlib import Path
@@ -118,23 +119,62 @@ def _parse_rate(element: Optional[etree._Element], fallback: Optional[Rate] = No
     return Rate(timebase=timebase, ntsc=_bool(rate_el, "ntsc", False))
 
 
+#: "/C:/Footage/x" or "C:/Footage/x" -- a Windows path, wherever we read it.
+_DRIVE_LETTER = re.compile(r"^[/\\]*([A-Za-z]):[/\\](.*)$", re.DOTALL)
+
+
 def pathurl_to_path(pathurl: Optional[str]) -> Optional[Path]:
-    """Convert an xmeml ``<pathurl>`` into a filesystem path."""
+    """Convert an xmeml ``<pathurl>`` into a filesystem path.
+
+    Three shapes have to survive, because a timeline written on one machine is
+    routinely opened on another:
+
+      file://localhost/Volumes/x  -- netloc "localhost", path "/Volumes/x"
+      file:///Volumes/x           -- netloc "",          path "/Volumes/x"
+      file://localhost/C:/Media/x -- Windows, and the leading slash is not
+                                     part of the path. Left on, the result is
+                                     a *relative* path with no drive, so every
+                                     file reports as missing and nothing syncs.
+
+    A UNC share keeps its double slash, whether it arrives in the path or as
+    the URL's host.
+    """
     if not pathurl:
         return None
     parsed = urllib.parse.urlparse(pathurl)
     if parsed.scheme and parsed.scheme != "file":
         return None
-    # "file://localhost/Volumes/x" -> netloc "localhost", path "/Volumes/x".
-    # "file:///Volumes/x"          -> netloc "",          path "/Volumes/x".
     raw = urllib.parse.unquote(parsed.path) if parsed.scheme else urllib.parse.unquote(pathurl)
-    return Path(raw) if raw else None
+    if not raw:
+        return None
+
+    drive = _DRIVE_LETTER.match(raw)
+    if drive:
+        return Path(f"{drive.group(1)}:\\{drive.group(2)}".replace("/", "\\"))
+
+    host = parsed.netloc
+    if host and host.lower() != "localhost":
+        # file://server/share/x -- the host *is* the first UNC component.
+        return Path(f"//{host}{raw}")
+    return Path(raw)
 
 
 def path_to_pathurl(path: Path) -> str:
-    """Render a filesystem path as an xmeml ``<pathurl>``."""
-    quoted = urllib.parse.quote(str(path))
-    return f"file://localhost{quoted}"
+    """Render a filesystem path as an xmeml ``<pathurl>``.
+
+    Windows paths are emitted in the form the NLEs write them: forward
+    slashes, the drive letter's colon left alone. Percent-encoding the colon
+    or leaving backslashes in gives a URL that imports without complaint and
+    relinks nothing.
+    """
+    text = str(path).replace("\\", "/")
+
+    drive = re.match(r"^([A-Za-z]):/(.*)$", text, re.DOTALL)
+    if drive:
+        rest = urllib.parse.quote(drive.group(2), safe="/")
+        return f"file://localhost/{drive.group(1)}:/{rest}"
+
+    return "file://localhost" + urllib.parse.quote(text, safe="/")
 
 
 def seconds_to_ppro_ticks(seconds: float) -> int:
