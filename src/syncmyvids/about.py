@@ -280,6 +280,25 @@ A clip is in the wrong place
 Premiere warns about a speed effect
     Turn off "Correct recorder drift" and run again, then report it.
 
+UPDATES
+
+A bar appears across the top when a newer version exists, with a button to
+fetch it. There is no automatic install: it opens the release page and you
+decide.
+
+That check is the only thing in this app that touches a network, so it is
+worth being plain about. Once a day at most, it asks GitHub -- where the
+releases are published -- what the newest version number is. It sends nothing
+with the request: no identifier, no version, no count. The reply is the same
+for everyone, so there is nothing to report. Nothing reaches a server of ours,
+because there is no server of ours. A failed check is silent and never delays
+a sync.
+
+Turn it off under Help > Check for Updates at Launch and it stops entirely;
+no request is made at all. Dismissing the bar with X hides that version for
+good, and a later one will still be announced.
+
+
 The app will not open on another Mac
     Download builds are signed and notarized. A build you made yourself is not:
     right-click it, choose Open, then Open again (on macOS 15 and later use

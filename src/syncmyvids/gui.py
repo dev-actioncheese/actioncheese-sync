@@ -34,6 +34,7 @@ from .audio.features import FeatureCache
 from .engine import SyncOptions, load_inputs, sync_timeline
 from .errors import SyncMyVidsError
 from .formats import fcp7
+from . import updates
 from .timelineview import (
     COLOUR_BG, COLOUR_GRID, COLOUR_MARKER, COLOUR_ROW, COLOUR_ROW_ALT,
     COLOUR_TEXT, COLOUR_UNSYNCED, COLOUR_VIDEO, COLOUR_WAVE,
@@ -131,6 +132,8 @@ class SyncApp:
         self.output_path = tk.StringVar()
         self.trust_synced = tk.BooleanVar(value=False)
         self._prefs = _load_prefs()
+        self.check_updates = tk.BooleanVar(
+            value=bool(self._prefs.get("check_updates", True)))
         self.sidebar_open = bool(self._prefs.get("sidebar_open", True))
         self.close_gaps = tk.BooleanVar(value=True)
         self.correct_drift = tk.BooleanVar(value=True)
@@ -151,6 +154,7 @@ class SyncApp:
         self._check_ffmpeg()
         self._register_open_handler(root)
         root.after(100, self._drain)
+        root.after(1200, self._start_update_check)
 
     # -------------------------------------------------------------- appearance
     def _apply_theme(self, root: tk.Tk) -> None:
@@ -200,6 +204,14 @@ class SyncApp:
         # clam's indicator is its own element with its own colour options --
         # the generic "indicatorcolor" every other theme uses does nothing
         # here, which leaves a white box with a black tick in a dark window.
+        style.configure("OnCheese.TButton", background=CHEESE_DARK, foreground=CHEESE,
+                        bordercolor=CHEESE_DEEP, relief="flat", padding=(12, 3))
+        style.map("OnCheese.TButton",
+                  background=[("pressed", PANEL), ("active", PANEL_RAISED)],
+                  foreground=[("pressed", CHEESE), ("active", CHEESE)],
+                  lightcolor=[("pressed", CHEESE_DEEP), ("active", PANEL_RAISED)],
+                  darkcolor=[("pressed", CHEESE_DEEP), ("active", PANEL_RAISED)])
+
         style.configure("TCheckbutton", background=WINDOW, foreground=INK,
                         focuscolor=WINDOW, indicatormargin=(0, 0, 7, 0),
                         indicatorbackground=PANEL, indicatorforeground=CHEESE_DARK,
@@ -313,6 +325,10 @@ class SyncApp:
         helpmenu = tk.Menu(menubar, name="help", tearoff=0)
         helpmenu.add_command(label=f"{about.APP_NAME} Help", command=self.show_help)
         helpmenu.add_separator()
+        helpmenu.add_checkbutton(label="Check for Updates at Launch",
+                                 variable=self.check_updates,
+                                 command=self._toggle_update_checks)
+        helpmenu.add_separator()
         helpmenu.add_command(label="Report a Bug…", command=self._report_bug)
         helpmenu.add_command(label=f"About {about.APP_NAME}", command=self.show_about)
         menubar.add_cascade(label="Help", menu=helpmenu)
@@ -389,10 +405,12 @@ class SyncApp:
         shell = ttk.Frame(root)
         shell.pack(fill="both", expand=True)
         shell.columnconfigure(0, weight=1)
-        shell.rowconfigure(0, weight=1)
+        shell.rowconfigure(1, weight=1)
+
+        self._build_update_banner(shell)
 
         outer = ttk.Frame(shell, padding=12)
-        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid(row=1, column=0, sticky="nsew")
         outer.columnconfigure(0, weight=1)
 
         self._build_sidebar(shell)
@@ -570,6 +588,82 @@ class SyncApp:
         ttk.Label(outer, textvariable=self.status, anchor="w",
                   foreground=INK_DIM).grid(row=5, column=0, sticky="ew", pady=(8, 0))
 
+    # ------------------------------------------------------------------ updates
+    def _build_update_banner(self, shell: ttk.Frame) -> None:
+        """A strip across the top, shown only when there is something to say.
+
+        Built hidden and stays hidden unless a newer release exists, so the
+        usual state of this app is not to have a bar nagging at the top of it.
+        """
+        self.update_banner = tk.Frame(shell, background=CHEESE)
+        self.update_banner.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.update_banner.columnconfigure(0, weight=1)
+        self.update_banner.grid_remove()
+
+        self.update_text = tk.Label(
+            self.update_banner, background=CHEESE, foreground=CHEESE_DARK,
+            anchor="w", padx=14, pady=8, font=(UI_FONT, 12))
+        self.update_text.grid(row=0, column=0, sticky="ew")
+
+        ttk.Button(self.update_banner, text="Get the update",
+                   style="OnCheese.TButton", command=self._open_update
+                   ).grid(row=0, column=1, padx=(0, 6), pady=5)
+        # A plain label rather than a button: a dismiss control should not
+        # draw the eye more than the thing it dismisses.
+        close = tk.Label(self.update_banner, text="\u2715", background=CHEESE,
+                         foreground=CHEESE_DARK, padx=10, cursor="pointinghand",
+                         font=(UI_FONT, 13))
+        close.grid(row=0, column=2, padx=(0, 6))
+        close.bind("<Button-1>", lambda _e: self._dismiss_update())
+
+    def _start_update_check(self) -> None:
+        """Ask GitHub, off the UI thread, and only if that is wanted.
+
+        Nothing is sent but the request itself, and a failure is silent: an
+        update check must never delay or interrupt the work.
+        """
+        if not self._prefs.get("check_updates", True):
+            return
+
+        def work() -> None:
+            try:
+                release = updates.check(__version__, self._prefs)
+            except Exception as exc:  # noqa: BLE001 - never surface this
+                log.debug("update check failed: %s", exc)
+                return
+            _save_prefs(self._prefs)
+            if release is not None:
+                self.messages.put(("update", release))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_update(self, release) -> None:
+        if self._prefs.get("update_dismissed") == release.version:
+            return
+        self._update_release = release
+        self.update_text.configure(
+            text=f"ActionCheese Sync {release.version} is available "
+                 f"— you have {__version__}.")
+        self.update_banner.grid()
+
+    def _open_update(self) -> None:
+        release = getattr(self, "_update_release", None)
+        webbrowser.open(release.url if release else about.COMPANION_URL)
+
+    def _dismiss_update(self) -> None:
+        """Hide it, and do not raise this same version again."""
+        release = getattr(self, "_update_release", None)
+        if release is not None:
+            self._prefs["update_dismissed"] = release.version
+            _save_prefs(self._prefs)
+        self.update_banner.grid_remove()
+
+    def _toggle_update_checks(self) -> None:
+        self._prefs["check_updates"] = bool(self.check_updates.get())
+        _save_prefs(self._prefs)
+        if not self.check_updates.get():
+            self.update_banner.grid_remove()
+
     # ------------------------------------------------------------------ sidebar
     def _build_sidebar(self, shell: ttk.Frame) -> None:
         """A narrow panel about the companion app, on the right.
@@ -580,11 +674,11 @@ class SyncApp:
         it is left in is the state it comes back in.
         """
         self.sidebar = ttk.Frame(shell, padding=(12, 12, 12, 12))
-        self.sidebar.grid(row=0, column=1, sticky="ns")
+        self.sidebar.grid(row=1, column=1, sticky="ns")
         self.sidebar.columnconfigure(0, weight=1)
 
         self.sidebar_strip = ttk.Frame(shell, padding=(2, 12, 2, 12))
-        self.sidebar_strip.grid(row=0, column=1, sticky="ns")
+        self.sidebar_strip.grid(row=1, column=1, sticky="ns")
 
         # Collapsed: one button, pointing the way back.
         ttk.Button(self.sidebar_strip, text="\u2039", width=2,
@@ -984,6 +1078,8 @@ class SyncApp:
                         self._write(payload.summary)
                     for warning in payload.warnings:
                         self._write(f"note: {warning}")
+                elif kind == "update":
+                    self._show_update(payload)
                 elif kind == "status":
                     self.status.set(str(payload))
                 elif kind == "timelines":
