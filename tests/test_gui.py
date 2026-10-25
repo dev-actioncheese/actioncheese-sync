@@ -15,6 +15,23 @@ import pytest
 tk = pytest.importorskip("tkinter")
 
 
+@pytest.fixture(autouse=True)
+def _never_touch_real_preferences(tmp_path, monkeypatch):
+    """Keep the suite out of the operator's own preferences file.
+
+    Exercising the folder picker calls _remember_dir, which saves. Left
+    alone, a test run writes a pytest temp path into the real window.json --
+    harmless, since a vanished folder is ignored on load, but it is still
+    somebody's settings being edited by a test.
+    """
+    store = tmp_path / "window.json"
+    monkeypatch.setattr("syncmyvids.gui._prefs_path", lambda: store)
+    monkeypatch.setattr("syncmyvids.gui._load_prefs", lambda: {})
+    saved: dict = {}
+    monkeypatch.setattr("syncmyvids.gui._save_prefs", saved.update)
+    return saved
+
+
 @pytest.fixture
 def app():
     from syncmyvids.gui import SyncApp
