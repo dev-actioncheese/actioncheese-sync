@@ -5,9 +5,9 @@ The app is downloaded from a web page, not an app store, so nothing else will
 ever tell its owner that a fix exists. That is the whole reason this module
 is here, and it shapes what it may do:
 
-- It asks **GitHub**, where the releases live, not a server of ours. Nothing
-  about the person reaches us, and the privacy policy's "no ActionCheese
-  servers" stays literally true.
+- It asks **GitHub**, where the releases live. The app never contacts a server
+  of ours, so nothing about the person reaches us. (We do run one, for the
+  website's feature votes -- this simply never talks to it.)
 - It sends nothing but the request. No identifier, no version, no count --
   the reply is the same for everyone, so there is nothing to report.
 - It runs once a day at most, off the UI thread, and a failure is silent.

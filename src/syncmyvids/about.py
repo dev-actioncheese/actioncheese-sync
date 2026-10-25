@@ -290,9 +290,8 @@ That check is the only thing in this app that touches a network, so it is
 worth being plain about. Once a day at most, it asks GitHub -- where the
 releases are published -- what the newest version number is. It sends nothing
 with the request: no identifier, no version, no count. The reply is the same
-for everyone, so there is nothing to report. Nothing reaches a server of ours,
-because there is no server of ours. A failed check is silent and never delays
-a sync.
+for everyone, so there is nothing to report. The app never contacts a server
+of ours. A failed check is silent and never delays a sync.
 
 Turn it off under Help > Check for Updates at Launch and it stops entirely;
 no request is made at all. Dismissing the bar with X hides that version for
