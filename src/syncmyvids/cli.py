@@ -46,7 +46,8 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="track to hold still, e.g. V1 or A3 (default: the busiest)")
     sync.add_argument("--min-confidence", type=float, default=0.45,
                       help="minimum correlation to accept a match (default: %(default)s)")
-    sync.add_argument("--min-peak-ratio", type=float, default=1.0,
+    sync.add_argument("--min-peak-ratio", type=float,
+                      default=SyncOptions().min_peak_ratio,
                       help="minimum peak-to-runner-up ratio (default: %(default)s)")
     sync.add_argument("--min-overlap", type=float, default=20.0, metavar="SECONDS",
                       help="minimum overlap to consider a match (default: %(default)s)")

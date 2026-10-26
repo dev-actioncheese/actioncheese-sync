@@ -120,6 +120,21 @@ def is_distinctive(peak_ratio: float, overlap_seconds: float) -> bool:
             and overlap_seconds >= RESCUE_OVERLAP_SECONDS)
 
 
+def is_acceptable(confidence: float, peak_ratio: float, overlap_seconds: float,
+                  *, min_confidence: float, min_peak_ratio: float) -> bool:
+    """Should this alignment be believed?
+
+    Either it stands alone (:func:`is_distinctive`), or it clears both floors:
+    a correlation strong enough to mean something, and a winning lag that beat
+    the best rival lag by a real margin rather than tying it. A tie carries no
+    information about which of the two lags is right, however high the
+    coefficient -- which is how a wedding's dance-floor music, close to
+    periodic, put a clip 9313 s from where it belonged at confidence 0.49.
+    """
+    return is_distinctive(peak_ratio, overlap_seconds) or (
+        confidence >= min_confidence and peak_ratio >= min_peak_ratio)
+
+
 @dataclass(frozen=True, slots=True)
 class Edge:
     """An accepted pairwise alignment between two units."""
@@ -345,10 +360,9 @@ def match_pairs(
                 continue
 
             distinctive = is_distinctive(result.peak_ratio, result.overlap_seconds)
-            accepted = distinctive or (
-                result.confidence >= min_confidence
-                and result.peak_ratio >= min_peak_ratio
-            )
+            accepted = is_acceptable(
+                result.confidence, result.peak_ratio, result.overlap_seconds,
+                min_confidence=min_confidence, min_peak_ratio=min_peak_ratio)
             attempts.append({
                 "a": a.unit.label,
                 "b": b.unit.label,

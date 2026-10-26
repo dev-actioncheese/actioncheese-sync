@@ -487,3 +487,58 @@ class TestMultipleInputs:
         camera.mkdir()
         assert main(["sync", str(source), str(camera), "--dry-run"]) == 1
         assert "usable media" in capsys.readouterr().err
+
+
+class TestTheDefaultsAreRealValues:
+    """Every numeric default must be a number the matcher can compare.
+
+    SyncOptions is a slots dataclass, so reading a field off the *class*
+    yields a member_descriptor rather than the default. Taking a CLI default
+    from one shipped a parser whose --min-peak-ratio was that descriptor, and
+    every real sync died on `peak_ratio >= min_peak_ratio`. Nothing caught it:
+    the CLI tests all sync degenerate timelines where no pair is ever scored,
+    so the matcher is never reached.
+    """
+
+    def defaults(self) -> dict:
+        from syncmyvids.cli import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(["sync", "in.xml", "--dry-run"])
+        return vars(args)
+
+    def test_no_default_is_a_descriptor(self) -> None:
+        import dataclasses
+
+        for name, value in self.defaults().items():
+            assert not isinstance(value, dataclasses.Field), name
+            assert type(value).__name__ != "member_descriptor", (
+                f"--{name.replace('_', '-')} defaults to a class attribute "
+                f"read off a slots dataclass, not to a value")
+
+    def test_the_numeric_defaults_are_numbers(self) -> None:
+        for name in ("min_confidence", "min_peak_ratio", "min_overlap",
+                     "unsynced_gap"):
+            value = self.defaults()[name]
+            assert isinstance(value, (int, float)), f"{name} is {value!r}"
+            assert value == value, f"{name} is NaN"
+
+    def test_the_cli_agrees_with_the_library(self) -> None:
+        # Someone changing a default in one place should not have to remember
+        # the other.
+        from syncmyvids.engine import SyncOptions
+
+        options = SyncOptions()
+        got = self.defaults()
+        assert got["min_peak_ratio"] == options.min_peak_ratio
+        assert got["min_confidence"] == options.min_confidence
+
+    def test_a_default_run_can_score_a_pair(self) -> None:
+        # The call that actually broke.
+        from syncmyvids.engine import SyncOptions
+        from syncmyvids.sync.graph import is_acceptable
+
+        options = SyncOptions(min_peak_ratio=self.defaults()["min_peak_ratio"])
+        assert is_acceptable(0.9, 2.0, 100.0,
+                             min_confidence=options.min_confidence,
+                             min_peak_ratio=options.min_peak_ratio) is True

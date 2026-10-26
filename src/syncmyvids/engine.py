@@ -40,7 +40,23 @@ class SyncOptions:
     """Everything tunable about a sync run."""
 
     min_confidence: float = 0.45
-    min_peak_ratio: float = 1.0
+    #: Reject a match whose winning lag is no better than the best rival lag.
+    #:
+    #: At 1.0, the old default, the gate was off: a correlation whose peak only
+    #: *tied* the runner-up was accepted, though it says nothing about which of
+    #: the two lags is right. Dance-floor music is close to periodic, so on a
+    #: wedding party the surface is full of such ties, and three of them got
+    #: into the solve -- winning by 0.4%, 0.7% and 0.8% -- one placing a clip
+    #: 9313 s out. Clipping those ties took that project's internal error from
+    #: 7072 s to 487 s and its frame-exact clips from 18 of 41 to 30.
+    #:
+    #: It stays deliberately low. The peak ratio is a poor *requirement* on
+    #: reverberant material -- a 1.4 threshold once rejected 9 of 13 correct
+    #: matches, and would discard 14 good pairs on that same wedding. This is
+    #: not "the peak must be tall"; it is "the winner must not be a coin flip".
+    #: For scale: on a healthy four-camera shoot the weakest match that reached
+    #: the solver won by 50%, so this sits nowhere near it.
+    min_peak_ratio: float = 1.05
     corroborate: bool = True
     corroboration_floor: float = corroborate_module.DEFAULT_FLOOR
     """Weak matches down to here get a second chance if they survive a
