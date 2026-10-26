@@ -90,9 +90,16 @@ class SyncReport:
         }
 
     def write_json(self, path: Path | str) -> None:
+        # default= for the same reason the comparison bundle needs it: these
+        # numbers come from the matcher as numpy scalars, and the ones that
+        # are not float subclasses would otherwise raise here and write
+        # nothing.
+        from .compare import _plain
+
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        path.write_text(json.dumps(self.to_dict(), indent=2, default=_plain),
+                        encoding="utf-8")
 
     # ------------------------------------------------------------------ render
     def render(self) -> str:
