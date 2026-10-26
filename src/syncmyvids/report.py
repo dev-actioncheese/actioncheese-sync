@@ -54,6 +54,17 @@ class SyncReport:
         return self._count("island")
 
     @property
+    def island_placement(self) -> dict[str, int]:
+        """How many clips sit in groups placed by clock, and by appending."""
+        counts: dict[str, int] = {}
+        for placement in self.placements:
+            if placement.get("status") != "island":
+                continue
+            counts.setdefault(placement.get("reason") or "unknown", 0)
+            counts[placement.get("reason") or "unknown"] += 1
+        return counts
+
+    @property
     def unsynced_count(self) -> int:
         return self._count("unsynced")
 
@@ -72,6 +83,7 @@ class SyncReport:
                 "units": self.unit_count,
                 "synced": self.synced_count,
                 "islands": self.island_count,
+                "island_placement": self.island_placement,
                 "unsynced": self.unsynced_count,
                 "reference_track": self.reference_track,
                 "last_synced_end_frames": self.last_synced_end_frames,
@@ -112,6 +124,33 @@ class SyncReport:
             f"{self.island_count} in separate synced groups, "
             f"{self.unsynced_count} unmatched"
         )
+
+        placed = self.island_placement
+        if placed:
+            # The operator cannot act on "24 islands". They can act on knowing
+            # that those clips are right among themselves and that it is the
+            # joins between the groups, and only those, that want checking.
+            lines.append("")
+            lines.append("Groups that sound alone:")
+            lines.append(
+                "  Nothing in the audio relates these to the rest -- two "
+                "recordings from one")
+            lines.append(
+                "  device never overlap, so there is nothing to correlate. "
+                "Inside each group")
+            lines.append(
+                "  the clips are synced to each other; it is where the groups "
+                "sit that is open.")
+            if placed.get("clock"):
+                lines.append(
+                    f"    {placed['clock']} clip(s) positioned from a device "
+                    f"clock -- as right as that clock is.")
+            if placed.get("appended"):
+                lines.append(
+                    f"    {placed['appended']} clip(s) simply appended -- no "
+                    f"clock to go on, so the position")
+                lines.append(
+                    "      carries no claim at all. Drag the block into place.")
 
         if self.placements:
             lines.append("")

@@ -49,3 +49,53 @@ class TestWritingTheReport:
         pair = json.loads(path.read_text(encoding="utf-8"))["pairs"][0]
         assert pair["accepted"] is True
         assert pair["offset"] == pytest.approx(1.25)
+
+
+def island(label: str, reason: str) -> dict:
+    return {"label": label, "status": "island", "start_frames": 0,
+            "shift_frames": 0, "reason": reason}
+
+
+class TestSayingWhereAGroupsPositionCameFrom:
+    """A group that sounds alone has to be reported as such.
+
+    Two recordings from one device never overlap, so audio can never relate
+    them. On a two-device wedding that left 24 groups whose positions came
+    from a camera clock, and the report said only "24 in separate synced
+    groups" -- which reads as a sync failure. It is not: inside each group
+    the clips are frame-accurate. What the operator needed was to know that
+    the joins *between* groups, and only those, were open to question.
+    """
+
+    def test_it_counts_how_each_group_was_positioned(self) -> None:
+        r = report(placements=[island("a", "clock"), island("b", "clock"),
+                               island("c", "appended")])
+        assert r.island_placement == {"clock": 2, "appended": 1}
+
+    def test_a_clean_run_says_nothing_about_groups(self) -> None:
+        r = report(placements=[{"label": "a", "status": "synced",
+                                "start_frames": 0, "shift_frames": 0}])
+        assert r.island_placement == {}
+        assert "Groups that sound alone" not in r.render()
+
+    def test_the_report_explains_what_is_and_is_not_in_doubt(self) -> None:
+        text = report(placements=[island("a", "clock")]).render()
+        assert "Groups that sound alone" in text
+        assert "synced to each other" in text, (
+            "it must say the clips inside a group are right, or the operator "
+            "reads the whole timeline as broken")
+
+    def test_an_appended_group_admits_it_is_not_positioned(self) -> None:
+        text = report(placements=[island("a", "appended")]).render()
+        assert "no" in text.lower() and "clock" in text.lower()
+        assert "Drag the block into place." in text
+
+    def test_it_survives_a_placement_with_no_reason_recorded(self) -> None:
+        r = report(placements=[{"label": "a", "status": "island",
+                                "start_frames": 0, "shift_frames": 0}])
+        assert r.island_placement == {"unknown": 1}
+        r.render()
+
+    def test_the_counts_reach_the_json(self) -> None:
+        r = report(placements=[island("a", "clock")])
+        assert r.to_dict()["summary"]["island_placement"] == {"clock": 1}

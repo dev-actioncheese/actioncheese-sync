@@ -588,8 +588,16 @@ def apply_layout(
             base = min(component.positions[n] for n in component.nodes)
             by_clock = island_start_from_clock(component)
             block_start = cursor + gap if by_clock is None else by_clock
+            # Say which it was. A block positioned by a device clock can be
+            # out by whatever that clock is out by, and one simply appended
+            # is not positioned at all -- in both cases the clips *within* it
+            # are still correct relative to each other, and that distinction
+            # is the whole of what the operator needs to know.
+            why = "appended" if by_clock is None else "clock"
             for node in sorted(component.nodes, key=lambda n: component.positions[n]):
-                place(node, block_start + (component.positions[node] - base), "island")
+                placement = place(
+                    node, block_start + (component.positions[node] - base), "island")
+                placement.reason = why
             cursor = max(cursor, rate.frames_to_seconds(placed_end()))
             continue
 
