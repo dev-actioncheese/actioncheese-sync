@@ -75,6 +75,24 @@ COMPANION_ICON = "actioncheese-icon.png"
 # --------------------------------------------------------------------------- #
 
 CHANGELOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("0.4.3", "2026-10-27", (
+        "Better sync on music. A correlation peak no better than the next "
+        "one along is no longer treated as a match. Dance-floor music repeats, "
+        "so it throws up lags that score alike, and taking one of those on "
+        "faith is what sent clips minutes out of place on a wedding party. "
+        "Measured on that footage, clips landing on the exact frame went from "
+        "18 of 41 to 30.",
+        "When clips end up in a separate group, the report now says where "
+        "that group's position came from -- a device's clock, or simply put "
+        "after everything else -- and makes clear that the clips inside it "
+        "are in sync with each other. Two recordings from one device never "
+        "overlap, so sound alone cannot relate them, and knowing that turns "
+        "\"the sync is broken\" into \"check these few joins\".",
+        "The comparison report records what actually became of every pair "
+        "measured, rather than a provisional verdict taken before the matches "
+        "were chosen. If you have sent one of these, it is worth sending "
+        "another.",
+    )),
     ("0.4.2", "2026-10-26", (
         "Saving a comparison report did nothing at all: you chose a filename "
         "and got no file and no message. It saves now.",
