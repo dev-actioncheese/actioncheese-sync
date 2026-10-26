@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import shutil
+
 import pytest
+
+from conftest import requires_ffmpeg
 
 tk = pytest.importorskip("tkinter")
 
@@ -632,3 +636,71 @@ class TestDroppingFiles:
         monkeypatch.setattr(app, "_preview", lambda: None)
         self.drop(app, "{unclosed brace")
         assert app.inputs == []
+
+
+@requires_ffmpeg
+class TestTheWorkerActuallyRuns:
+    """Drive the window's own worker over real media, end to end.
+
+    Nothing covered this before, and a single mistyped method name in it --
+    report.as_dict() for report.to_dict() -- shipped in 0.4.0 and broke every
+    sync in the app while 345 tests stayed green. The widgets were tested, the
+    thing they exist to do was not.
+    """
+
+    def run_worker(self, app, fixture_timeline: Path, tmp_path: Path, monkeypatch):
+        from syncmyvids.engine import SyncOptions
+
+        source = tmp_path / "in.xml"
+        shutil.copy(fixture_timeline, source)
+        target = tmp_path / "out.xml"
+
+        # A failure in the worker ends as a modal dialog, which waits for a
+        # click that never comes under pytest.  Stub the dialogs first, or a
+        # broken worker hangs the suite instead of failing it -- which is what
+        # happened the first time this test was pointed at the 0.4.0 bug.
+        self.dialogs: list[tuple[str, str, str]] = []
+        for kind in ("showerror", "showwarning", "showinfo"):
+            monkeypatch.setattr(
+                f"syncmyvids.gui.messagebox.{kind}",
+                lambda title, message, _k=kind: self.dialogs.append(
+                    (_k, title, message)),
+            )
+
+        # Record what the worker reports, then let the window's own pump
+        # handle it -- that handler is half of what broke.
+        seen: list = []
+        real_put = app.messages.put
+        app.messages.put = lambda item: (seen.append(item), real_put(item))[1]
+        try:
+            app._run([source], target, SyncOptions())
+            app._drain()
+        finally:
+            app.messages.put = real_put
+        return target, dict(seen), seen
+
+    def test_a_sync_completes_without_error(self, app, fixture_timeline: Path,
+                                            tmp_path: Path, monkeypatch) -> None:
+        target, seen, drained = self.run_worker(
+            app, fixture_timeline, tmp_path, monkeypatch)
+        errors = [p for kind, p in drained if kind == "error"]
+        assert errors == [], f"the worker reported: {errors}"
+        assert [d for d in self.dialogs if d[0] == "showerror"] == []
+        assert "done" in seen
+        assert target.exists(), "no timeline was written"
+
+    def test_the_report_is_kept_for_comparing(self, app, fixture_timeline: Path,
+                                              tmp_path: Path, monkeypatch) -> None:
+        # This is the line that broke: the worker serialises the report so
+        # Help > Compare can measure against it later.
+        self.run_worker(app, fixture_timeline, tmp_path, monkeypatch)
+        assert isinstance(app._last_report, dict) and app._last_report
+        assert "pairs" in app._last_report, "the scored pairs must survive"
+        assert app._last_output is not None and app._last_output.exists()
+
+    def test_both_timelines_reach_the_view(self, app, fixture_timeline: Path,
+                                           tmp_path: Path, monkeypatch) -> None:
+        _, seen, _ = self.run_worker(
+            app, fixture_timeline, tmp_path, monkeypatch)
+        before, after = seen["timelines"]
+        assert before.tracks and after.tracks

@@ -75,6 +75,11 @@ COMPANION_ICON = "actioncheese-icon.png"
 # --------------------------------------------------------------------------- #
 
 CHANGELOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("0.4.1", "2026-10-26", (
+        "Fixed a crash at the end of every sync in 0.4.0. The timeline was "
+        "written correctly before it, so a run that hit it lost nothing but "
+        "the report -- run the sync again on 0.4.1 to see it.",
+    )),
     ("0.4.0", "2026-10-26", (
         "Drag folders and timelines straight onto the input list.",
         "Help > Compare With a Correct Timeline measures a sync against one you "

@@ -1199,7 +1199,7 @@ class SyncApp:
             cache = FeatureCache(options.cache_dir, sample_rate=options.sample_rate)
             load_peaks(before, cache)
             load_peaks(after, cache)
-            self.messages.put(("compared", (report.as_dict(), target)))
+            self.messages.put(("compared", (report.to_dict(), target)))
             self.messages.put(("timelines", (before, after)))
             self.messages.put(("log", ""))
             self.messages.put(("log", report.render()))

@@ -11,7 +11,7 @@ from .errors import (
 from .model import Clip, MediaFile, Sequence, SyncUnit, Timeline, Track, build_sync_units
 from .timebase import Rate, format_timecode, parse_timecode
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     "Clip",
