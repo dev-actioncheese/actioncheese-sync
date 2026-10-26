@@ -337,6 +337,35 @@ def _stated_disagreements(groups: list[dict[int, float]], solution,
     return out
 
 
+def _label_attempts(attempts: list[dict], strong, corroborated) -> None:
+    """Stamp each scored pair with the decision that reached the timeline.
+
+    ``stage`` is the detail: "solved" for a match confident enough on its own,
+    "corroborated" for one admitted because it agreed with the solution,
+    "weak" for one that passed the lowered matching floor and got no further,
+    and "below-floor" for one never in contention. ``accepted`` becomes the
+    plain answer to "did this pair move the timeline", which is the question
+    a comparison against a known-good timeline can actually grade.
+    """
+    def key(edge) -> tuple[int, int]:
+        return (edge.a, edge.b)
+
+    solved = {key(e) for e in strong if not e.stated}
+    extra = {key(e) for e in corroborated or () if not e.stated}
+    for attempt in attempts:
+        pair = (attempt.get("a_index"), attempt.get("b_index"))
+        if pair in solved:
+            stage = "solved"
+        elif pair in extra:
+            stage = "corroborated"
+        elif attempt.get("passed_floor"):
+            stage = "weak"
+        else:
+            stage = "below-floor"
+        attempt["stage"] = stage
+        attempt["accepted"] = stage in ("solved", "corroborated")
+
+
 def sync_timeline(
     timeline: Timeline,
     options: Optional[SyncOptions] = None,
@@ -435,6 +464,7 @@ def sync_timeline(
         solve.snap_rigid(solution, stated_groups)
 
     corroborated: list[dict] = []
+    extra: list = []
     if options.corroborate and len(strong) < len(edges):
         extra, corroborated = corroborate_module.corroborate(
             features, solution, edges,
@@ -446,6 +476,16 @@ def sync_timeline(
             solution = solve.solve(len(units), strong + extra + stated)
             if options.trust_synced:
                 solve.snap_rigid(solution, stated_groups)
+
+    # Say what actually became of every pair we scored.
+    #
+    # The matching pass runs at a lowered floor so corroboration has something
+    # to work with, so its own "accepted" means only "passed that floor" --
+    # a third of those pairs never reach the solver. A report that calls them
+    # accepted invites exactly the wrong conclusion: that the matcher took a
+    # match it in fact threw away. The only decision worth learning from is
+    # the one that shaped the timeline.
+    _label_attempts(attempts, strong, extra)
 
     stamps: dict[int, float] = {}
     if options.use_clock:

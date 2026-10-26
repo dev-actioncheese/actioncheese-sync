@@ -357,6 +357,11 @@ def match_pairs(
                 # tracks move.
                 "a_file": _source_name(a),
                 "b_file": _source_name(b),
+                # Unit indices, so the engine can stamp each attempt with what
+                # finally became of it. Labels carry a track number and tracks
+                # move, so they are not a safe join key.
+                "a_index": a.index,
+                "b_index": b.index,
                 "confidence": round(result.confidence, 4),
                 "peak_ratio": round(result.peak_ratio, 3),
                 "overlap_seconds": round(result.overlap_seconds, 2),
@@ -365,6 +370,11 @@ def match_pairs(
                 # only way to tell a match that was wrong from one that was
                 # right and thrown away.
                 "delta_seconds": round(result.offset_seconds, 4),
+                # Provisional. This pass runs at a lowered floor so the
+                # corroboration pass has candidates, so passing here is not
+                # the same as being used; the engine overwrites "accepted"
+                # with the decision that actually shaped the timeline.
+                "passed_floor": accepted,
                 "accepted": accepted,
             })
             if not accepted:
