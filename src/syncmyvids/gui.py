@@ -34,6 +34,7 @@ from .audio.features import FeatureCache
 from .engine import SyncOptions, load_inputs, sync_timeline
 from .errors import SyncMyVidsError
 from .formats import fcp7
+from . import compare
 from . import updates
 from .timelineview import (
     COLOUR_BG, COLOUR_GRID, COLOUR_MARKER, COLOUR_ROW, COLOUR_ROW_ALT,
@@ -132,6 +133,10 @@ class SyncApp:
         self.output_path = tk.StringVar()
         self.trust_synced = tk.BooleanVar(value=False)
         self._prefs = _load_prefs()
+        #: The last finished run, so its result can be measured against a
+        #: timeline the operator trusts.
+        self._last_report: Optional[dict] = None
+        self._last_output: Optional[Path] = None
         self.check_updates = tk.BooleanVar(
             value=bool(self._prefs.get("check_updates", True)))
         self.sidebar_open = bool(self._prefs.get("sidebar_open", True))
@@ -324,6 +329,9 @@ class SyncApp:
 
         helpmenu = tk.Menu(menubar, name="help", tearoff=0)
         helpmenu.add_command(label=f"{about.APP_NAME} Help", command=self.show_help)
+        helpmenu.add_separator()
+        helpmenu.add_command(label="Compare With a Correct Timeline…",
+                             command=self._compare_with_good)
         helpmenu.add_separator()
         helpmenu.add_checkbutton(label="Check for Updates at Launch",
                                  variable=self.check_updates,
@@ -587,6 +595,71 @@ class SyncApp:
 
         ttk.Label(outer, textvariable=self.status, anchor="w",
                   foreground=INK_DIM).grid(row=5, column=0, sticky="ew", pady=(8, 0))
+
+    # ------------------------------------------------------------------ compare
+    def _compare_with_good(self) -> None:
+        """Measure this run against a timeline the operator trusts.
+
+        The point is to learn *how* a sync was wrong without anybody emailing
+        a wedding's worth of footage. Two timelines are enough; the audio is
+        not needed to compare positions.
+        """
+        if not self._last_report or not self._last_output:
+            messagebox.showinfo(
+                "Sync something first",
+                "Run a sync, then come back here with a timeline you know is "
+                "right — one from PluralEyes, Resolve, Premiere's own "
+                "synchronise, or synced by hand — and this will measure the "
+                "difference.")
+            return
+
+        chosen = filedialog.askopenfilename(
+            title="Choose the timeline you know is correct",
+            filetypes=[("Final Cut Pro XML", "*.xml"), ("All files", "*.*")],
+            initialdir=self._last_dir() or "")
+        if not chosen:
+            return
+
+        self.status.set("Comparing…")
+        try:
+            bundle = compare.build_bundle(
+                fcp7.read(self._last_output), fcp7.read(Path(chosen)),
+                report=self._last_report, anonymous=True)
+        except Exception as exc:  # noqa: BLE001 - a bad file is not a crash
+            self.status.set("Ready")
+            messagebox.showerror("Could not compare", str(exc))
+            return
+
+        self._write("")
+        self._write(compare.render(bundle))
+        self.tabs.select(1)
+        self.status.set("Ready")
+
+        if not messagebox.askyesno(
+                "Send this to us?",
+                f"{bundle['summary']['clips_compared']} clip(s) compared. The "
+                f"report holds no video, no audio, no file paths and no names "
+                f"— only numbers.\n\nSave it so you can email it to "
+                f"{about.BUG_EMAIL}?"):
+            return
+
+        suggested = f"{Path(chosen).stem}-comparison.json"
+        where = filedialog.asksaveasfilename(
+            title="Save the comparison", defaultextension=".json",
+            initialfile=suggested, initialdir=self._last_dir() or "")
+        if not where:
+            return
+        Path(where).write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+        self._write(f"Comparison written to {where}")
+        subject = urllib.parse.quote(f"{about.APP_NAME} {__version__} - sync comparison")
+        body = urllib.parse.quote(
+            f"Attached: {Path(where).name}\n\nWhat I synced:\n\nWhat went wrong:\n")
+        webbrowser.open(f"mailto:{about.BUG_EMAIL}?subject={subject}&body={body}")
+        messagebox.showinfo(
+            "Saved",
+            f"Saved as {Path(where).name}.\n\nAn email to {about.BUG_EMAIL} has "
+            f"been started — attach that file to it. Nothing is sent "
+            f"automatically.")
 
     # ------------------------------------------------------------------ updates
     def _build_update_banner(self, shell: ttk.Frame) -> None:
@@ -1044,6 +1117,7 @@ class SyncApp:
             cache = FeatureCache(options.cache_dir, sample_rate=options.sample_rate)
             load_peaks(before, cache)
             load_peaks(after, cache)
+            self.messages.put(("compared", (report.as_dict(), target)))
             self.messages.put(("timelines", (before, after)))
             self.messages.put(("log", ""))
             self.messages.put(("log", report.render()))
@@ -1078,6 +1152,8 @@ class SyncApp:
                         self._write(payload.summary)
                     for warning in payload.warnings:
                         self._write(f"note: {warning}")
+                elif kind == "compared":
+                    self._last_report, self._last_output = payload
                 elif kind == "update":
                     self._show_update(payload)
                 elif kind == "status":

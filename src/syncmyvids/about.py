@@ -270,14 +270,20 @@ any footage.
 1. Sync the same material the way you trust -- PluralEyes, Resolve, Premiere's
    own synchronise, or by dragging clips -- and export that timeline as
    Final Cut Pro XML.
-2. Run:
+2. In the app, after a sync has run: Help > Compare With a Correct Timeline.
+   Pick that file. You get a summary, and the option to save a report and
+   start an email with it. Nothing is ever sent on its own.
+
+   Or, from a terminal:
 
      actioncheese-sync compare ours.xml yours.xml --report report.json -o result.json
 
    ("ours.xml" is what this app produced, "yours.xml" is the good one. The
    report is optional but worth having: pass --report to the sync run that
    made ours.xml and it records every pair the matcher scored.)
-3. Read result.json -- it is plain text -- and email it to dev@actioncheese.com.
+3. Read the report -- it is plain text -- and email it to dev@actioncheese.com.
+   It is usually under two megabytes, even for a full day's wedding: the pairs
+   that teach us something are kept in full and the repetitive bulk is sampled.
 
 It contains no video, no audio and no file paths, and names are replaced by
 short codes, because a wedding folder names the client. Add --names if you

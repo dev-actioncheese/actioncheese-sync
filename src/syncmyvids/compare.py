@@ -35,6 +35,13 @@ FRAME_TOLERANCE_SECONDS = 0.05
 #: Past this, a clip is in the wrong place rather than merely imprecise.
 WRONG_SECONDS = 1.0
 
+#: How many scored pairs to carry in full. A day's wedding is 553 clips, which
+#: is 152,628 pairs and a 34 MB file nobody can email. Almost all of it is the
+#: dull case -- pairs correctly rejected -- so the rows that teach us something
+#: are kept in full, the rest are sampled, and histograms below preserve the
+#: distribution either way.
+MAX_PAIR_ROWS = 3000
+
 
 def anonymise(name: str, salt: str) -> str:
     """A stable short id for a filename, revealing nothing about it.
@@ -266,7 +273,11 @@ def build_bundle(ours: Timeline, theirs: Timeline, *,
         judged = judge_attempts(report.get("pairs") or [], theirs_by_name)
         for row in judged:
             row["a"], row["b"] = shown(row["a"]), shown(row["b"])
-        bundle["scored_pairs"] = judged
+        kept = choose_pair_rows(judged)
+        bundle["scored_pairs"] = kept
+        bundle["scored_pairs_total"] = len(judged)
+        bundle["scored_pairs_kept"] = len(kept)
+        bundle["pair_distribution"] = summarise_pairs(judged)
         bundle["scoring"] = {
             "accepted_and_right": sum(1 for r in judged if r["accepted"] and r["correct"]),
             "accepted_but_wrong": sum(1 for r in judged if r["accepted"] and not r["correct"]),
@@ -276,6 +287,60 @@ def build_bundle(ours: Timeline, theirs: Timeline, *,
                                       if not r["accepted"] and not r["correct"]),
         }
     return bundle
+
+
+def _bucket(value: Optional[float], edges: tuple[float, ...]) -> str:
+    """Which band a number falls in, as a label."""
+    if value is None:
+        return "unknown"
+    for low, high in zip(edges, edges[1:]):
+        if low <= value < high:
+            return f"{low:g}-{high:g}"
+    return f"{edges[-1]:g}+"
+
+
+#: Band edges chosen around the thresholds they inform.
+CONFIDENCE_BANDS = (0.0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9)
+RATIO_BANDS = (0.0, 1.5, 3.0, 6.0, 10.0, 20.0)
+OVERLAP_BANDS = (0.0, 10.0, 30.0, 60.0, 180.0, 300.0, 900.0)
+
+
+def summarise_pairs(judged: list[dict]) -> dict:
+    """The distribution of every pair, which survives dropping the rows.
+
+    This is what a threshold is actually chosen from: at each level of
+    confidence, of peak ratio, of overlap, how many answers were right and how
+    many wrong. It stays true however many individual rows are carried.
+    """
+    tables: dict[str, dict] = {"confidence": {}, "peak_ratio": {}, "overlap_seconds": {}}
+    for field_name, edges in (("confidence", CONFIDENCE_BANDS),
+                              ("peak_ratio", RATIO_BANDS),
+                              ("overlap_seconds", OVERLAP_BANDS)):
+        for row in judged:
+            band = _bucket(row.get(field_name), edges)
+            cell = tables[field_name].setdefault(
+                band, {"right": 0, "wrong": 0, "accepted": 0, "rejected": 0})
+            cell["right" if row["correct"] else "wrong"] += 1
+            cell["accepted" if row["accepted"] else "rejected"] += 1
+    return tables
+
+
+def choose_pair_rows(judged: list[dict], limit: int = MAX_PAIR_ROWS) -> list[dict]:
+    """Keep every row that teaches something; sample the rest.
+
+    A pair we rejected that was right, or accepted that was wrong, is the whole
+    reason for doing this and there are never many. Pairs we judged correctly
+    are the bulk and are interchangeable, so an evenly spaced sample of them
+    says the same thing at a hundredth of the size.
+    """
+    interesting = [r for r in judged if r["accepted"] != r["correct"]]
+    dull = [r for r in judged if r["accepted"] == r["correct"]]
+
+    room = max(0, limit - len(interesting))
+    if len(dull) > room:
+        step = len(dull) / room if room else 0
+        dull = [dull[int(i * step)] for i in range(room)] if room else []
+    return interesting + dull
 
 
 def render(bundle: dict) -> str:

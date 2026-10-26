@@ -164,3 +164,56 @@ class TestTheBundleRevealsNothing:
         assert summary["clips_compared"] == 2
         assert summary["agreed_within_a_frame"] == 2
         assert summary["wrong_by_over_a_second"] == 0
+
+
+class TestKeepingTheBundleSendable:
+    """A day's wedding is 553 clips, which is 152,628 pairs and 34 MB of JSON.
+
+    Nobody can email that, and almost all of it is the dull case: pairs
+    correctly rejected. The rows that teach us something are rare and must
+    always survive.
+    """
+
+    def judged(self, interesting: int, dull: int) -> list[dict]:
+        rows = []
+        for i in range(interesting):
+            rows.append({"a": f"i{i}", "b": "x", "confidence": 0.2, "peak_ratio": 9.0,
+                         "overlap_seconds": 600.0, "accepted": False,
+                         "error_seconds": 0.01, "correct": True})
+        for i in range(dull):
+            rows.append({"a": f"d{i}", "b": "x", "confidence": 0.1, "peak_ratio": 1.0,
+                         "overlap_seconds": 40.0, "accepted": False,
+                         "error_seconds": 30.0, "correct": False})
+        return rows
+
+    def test_every_informative_row_is_kept(self) -> None:
+        kept = compare.choose_pair_rows(self.judged(40, 150_000), limit=3000)
+        assert sum(1 for r in kept if r["accepted"] != r["correct"]) == 40
+
+    def test_the_dull_bulk_is_sampled_away(self) -> None:
+        kept = compare.choose_pair_rows(self.judged(40, 150_000), limit=3000)
+        assert len(kept) <= 3000
+        assert len(kept) > 100, "a sample, not nothing"
+
+    def test_a_small_project_keeps_everything(self) -> None:
+        rows = self.judged(2, 100)
+        assert len(compare.choose_pair_rows(rows, limit=3000)) == len(rows)
+
+    def test_informative_rows_win_even_past_the_limit(self) -> None:
+        # If there are that many, we want all of them: something is badly
+        # wrong and this is the evidence.
+        kept = compare.choose_pair_rows(self.judged(5000, 100_000), limit=3000)
+        assert sum(1 for r in kept if r["accepted"] != r["correct"]) == 5000
+
+    def test_the_distribution_survives_the_sampling(self) -> None:
+        """Thresholds are chosen from the shape, which must stay true."""
+        tables = compare.summarise_pairs(self.judged(40, 1000))
+        assert set(tables) == {"confidence", "peak_ratio", "overlap_seconds"}
+        counted = sum(cell["right"] + cell["wrong"]
+                      for cell in tables["confidence"].values())
+        assert counted == 1040, "every pair counted, kept or not"
+
+    def test_a_band_records_right_against_wrong(self) -> None:
+        tables = compare.summarise_pairs(self.judged(40, 1000))
+        band = tables["peak_ratio"]["6-10"]
+        assert band["right"] == 40 and band["wrong"] == 0
