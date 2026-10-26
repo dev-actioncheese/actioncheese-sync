@@ -104,6 +104,12 @@ RESCUE_OVERLAP_SECONDS = 300.0
 RIGID_WEIGHT = 1.0e7
 
 
+def _source_name(feature: "UnitFeature") -> Optional[str]:
+    """The media file a unit came from, for joining across timelines."""
+    media = feature.unit.primary_clip.file
+    return media.path.name if media is not None and media.path is not None else None
+
+
 def is_distinctive(peak_ratio: float, overlap_seconds: float) -> bool:
     """Is this alignment so much better than every other that it stands alone?
 
@@ -346,9 +352,19 @@ def match_pairs(
             attempts.append({
                 "a": a.unit.label,
                 "b": b.unit.label,
+                # The files, so an attempt can be matched against a timeline
+                # someone else produced. Labels carry a track number, and
+                # tracks move.
+                "a_file": _source_name(a),
+                "b_file": _source_name(b),
                 "confidence": round(result.confidence, 4),
                 "peak_ratio": round(result.peak_ratio, 3),
                 "overlap_seconds": round(result.overlap_seconds, 2),
+                # Where this pairing would have put b relative to a. Recorded
+                # even when rejected: against a known-good timeline it is the
+                # only way to tell a match that was wrong from one that was
+                # right and thrown away.
+                "delta_seconds": round(result.offset_seconds, 4),
                 "accepted": accepted,
             })
             if not accepted:

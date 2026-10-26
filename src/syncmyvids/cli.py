@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
 
 from . import __version__, about
 from .audio import ffmpeg
+from . import compare
 from .engine import SyncOptions, load_inputs, sync_timeline
 from .errors import SyncMyVidsError
 from .formats import fcp7
@@ -118,6 +120,26 @@ def _build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--merge", type=Path, nargs="+", action="append",
                        metavar="FOLDER", help="folders to read as one camera")
 
+    compare_cmd = subparsers.add_parser(
+        "compare",
+        help="measure our sync against one known to be right, and write a "
+             "report you can send back without sending any footage")
+    compare_cmd.add_argument("ours", type=Path,
+                             help="the timeline ActionCheese Sync produced")
+    compare_cmd.add_argument("theirs", type=Path,
+                             help="the same material synced correctly, as FCP7 XML "
+                                  "(PluralEyes, Resolve, Premiere's synchronise, or by hand)")
+    compare_cmd.add_argument("--report", type=Path,
+                             help="the JSON report from that run, which adds every "
+                                  "pair we scored and whether it was right")
+    compare_cmd.add_argument("-o", "--output", type=Path,
+                             help="write the report here, ready to email")
+    compare_cmd.add_argument("--names", action="store_true",
+                             help="keep real file and folder names (they are hashed "
+                                  "by default, because a path names a client)")
+    compare_cmd.add_argument("--note", default="",
+                             help="anything you want to tell us about this project")
+
     subparsers.add_parser("guide", help="how to use syncmyvids, and what each option does")
     subparsers.add_parser("about", help="version, author and how to report a bug")
 
@@ -169,6 +191,27 @@ def _command_probe(args: argparse.Namespace) -> int:
                     frame = int(element.findtext("in") or 0)
                     print(f"    {format_timecode(frame, sequence.rate)}  "
                           f"{element.findtext('name') or ''}")
+    return 0
+
+
+def _command_compare(args: argparse.Namespace) -> int:
+    report = None
+    if args.report:
+        report = json.loads(Path(args.report).read_text(encoding="utf-8"))
+
+    bundle = compare.build_bundle(
+        fcp7.read(args.ours), fcp7.read(args.theirs),
+        report=report, anonymous=not args.names, note=args.note,
+    )
+    print(compare.render(bundle))
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+        print(f"\nWritten to {args.output}")
+        print(f"It contains no footage and no paths{'' if args.names else ' and no names'}. "
+              f"Read it, then send it to {about.BUG_EMAIL}.")
+    else:
+        print(f"\nAdd -o report.json to write this out and send it to {about.BUG_EMAIL}.")
     return 0
 
 
@@ -257,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "probe":
             return _command_probe(args)
+        if args.command == "compare":
+            return _command_compare(args)
         return _command_sync(args)
     except SyncMyVidsError as exc:
         print(f"error: {exc}", file=sys.stderr)

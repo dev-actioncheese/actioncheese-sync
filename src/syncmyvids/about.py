@@ -262,6 +262,34 @@ between them; the clip is then placed after the blockage rather than through
 it, which is the one case where the order is broken to keep the tracks honest.
 
 
+HELPING US FIX A BAD SYNC
+
+If a sync came out wrong, you can tell us exactly how wrong without sending
+any footage.
+
+1. Sync the same material the way you trust -- PluralEyes, Resolve, Premiere's
+   own synchronise, or by dragging clips -- and export that timeline as
+   Final Cut Pro XML.
+2. Run:
+
+     actioncheese-sync compare ours.xml yours.xml --report report.json -o result.json
+
+   ("ours.xml" is what this app produced, "yours.xml" is the good one. The
+   report is optional but worth having: pass --report to the sync run that
+   made ours.xml and it records every pair the matcher scored.)
+3. Read result.json -- it is plain text -- and email it to dev@actioncheese.com.
+
+It contains no video, no audio and no file paths, and names are replaced by
+short codes, because a wedding folder names the client. Add --names if you
+would rather send the real ones.
+
+What it tells us is the thing we cannot otherwise learn: not just that a clip
+landed in the wrong place, but for every pair the matcher scored, whether its
+answer was right. A match we rejected that was correct means the thresholds
+are too strict; one we accepted that was wrong means they are too loose. That
+is how this gets better on real footage instead of our own test files.
+
+
 IF SOMETHING LOOKS WRONG
 
 Nothing syncs
