@@ -558,18 +558,82 @@ class TestWhatChanged:
         app._show_changes_once()
         assert shown == []
 
-    def test_after_an_update_it_appears_once(self, app, monkeypatch) -> None:
-        from syncmyvids import __version__
-
-        shown: list[str] = []
+    def shown(self, app, monkeypatch) -> list[tuple[str, str]]:
+        """Collect (title, body) for each window the app decides to open."""
+        seen: list[tuple[str, str]] = []
         monkeypatch.setattr(app, "_text_window",
-                            lambda title, body, **kw: shown.append(title))
+                            lambda title, body, **kw: seen.append((title, body)))
+        return seen
+
+    def test_after_an_update_it_appears_once(self, app, monkeypatch) -> None:
+        shown = self.shown(app, monkeypatch)
         app._prefs["seen_version"] = "0.1.0"
         app._show_changes_once()
-        assert len(shown) == 1 and __version__ in shown[0]
+        assert len(shown) == 1 and "0.1.0" in shown[0][0]
 
         app._show_changes_once()          # the next launch
         assert len(shown) == 1, "it must not nag"
+
+    def test_every_fix_since_the_last_one_read_is_listed(
+            self, app, monkeypatch) -> None:
+        # The point of the accumulation: somebody who last read about 0.4.0
+        # must see the patches after it, not only the newest release.
+        from syncmyvids import about
+
+        shown = self.shown(app, monkeypatch)
+        app._prefs["seen_version"] = "0.1.0"
+        app._show_changes_once()
+        body = shown[0][1]
+        for version, _, _ in about.changes_since("0.1.0"):
+            assert version in body, f"{version} missing from the popup"
+        assert "0.1.0" not in body, "it listed what they had already read"
+
+    def test_a_patch_does_not_interrupt(self, app, monkeypatch) -> None:
+        from syncmyvids import __version__, about
+
+        if not about.CHANGELOG or len(about.CHANGELOG) < 2:
+            pytest.skip("needs a previous release to step from")
+        shown = self.shown(app, monkeypatch)
+        major, minor, _ = (int(n) for n in __version__.split("."))
+        app._prefs["seen_version"] = f"{major}.{minor}.0"
+        app._show_changes_once()
+        assert shown == [], "a hotfix should not put a window in the way"
+
+    def test_a_patch_leaves_its_notes_pending(self, app, monkeypatch) -> None:
+        # Not shown is not the same as discarded: the record must stay put so
+        # the fix still appears at the next real release.
+        from syncmyvids import __version__
+
+        self.shown(app, monkeypatch)
+        major, minor, _ = (int(n) for n in __version__.split("."))
+        app._prefs["seen_version"] = f"{major}.{minor}.0"
+        app._show_changes_once()
+        assert app._prefs["seen_version"] == f"{major}.{minor}.0"
+
+    def test_a_real_release_does_interrupt(self, app, monkeypatch) -> None:
+        shown = self.shown(app, monkeypatch)
+        app._prefs["seen_version"] = "0.3.0"
+        app._show_changes_once()
+        assert len(shown) == 1
+
+    def test_a_fresh_install_is_recorded_so_it_stays_quiet_later(
+            self, app, monkeypatch) -> None:
+        from syncmyvids import __version__
+
+        self.shown(app, monkeypatch)
+        app._prefs.pop("seen_version", None)
+        app._show_changes_once()
+        assert app._prefs["seen_version"] == __version__
+
+    def test_which_releases_count_as_worth_showing(self) -> None:
+        from syncmyvids import about
+
+        assert about.is_significant("0.4.0", "0.5.0")
+        assert about.is_significant("0.4.1", "1.0.0")
+        assert not about.is_significant("0.4.0", "0.4.1")
+        assert not about.is_significant("0.4.0", "0.4.9")
+        # Numbers, not text: 0.10 is after 0.9.
+        assert about.is_significant("0.9.0", "0.10.0")
 
     def test_it_lists_only_what_is_new_to_you(self) -> None:
         from syncmyvids import about
@@ -704,3 +768,83 @@ class TestTheWorkerActuallyRuns:
             app, fixture_timeline, tmp_path, monkeypatch)
         before, after = seen["timelines"]
         assert before.tracks and after.tracks
+
+
+@requires_ffmpeg
+class TestSavingTheComparison:
+    """Help > Compare With a Correct Timeline, as far as the file on disk.
+
+    The save silently did nothing in 0.4.1: json refused a numpy scalar in
+    the bundle, and because the failure was on the UI thread rather than the
+    worker, Tk printed the traceback to a stderr that a bundled .app discards.
+    The operator chose a filename and got no file and no message.
+    """
+
+    def compare_and_save(self, app, fixture_timeline: Path, tmp_path: Path,
+                         monkeypatch, *, send: bool = True):
+        from syncmyvids.engine import SyncOptions
+
+        source = tmp_path / "in.xml"
+        shutil.copy(fixture_timeline, source)
+        target = tmp_path / "out.xml"
+
+        self.dialogs: list[tuple[str, str, str]] = []
+        for kind in ("showerror", "showwarning", "showinfo"):
+            monkeypatch.setattr(
+                f"syncmyvids.gui.messagebox.{kind}",
+                lambda title, message, _k=kind: self.dialogs.append(
+                    (_k, title, message)))
+        monkeypatch.setattr("syncmyvids.gui.webbrowser.open", lambda url: None)
+
+        # A real run, so the report carries the matcher's own values.
+        app._run([source], target, SyncOptions())
+        app._drain()
+
+        saved = tmp_path / "comparison.json"
+        monkeypatch.setattr("syncmyvids.gui.filedialog.askopenfilename",
+                            lambda **kw: str(source))
+        monkeypatch.setattr("syncmyvids.gui.messagebox.askyesno",
+                            lambda *a, **kw: send)
+        monkeypatch.setattr("syncmyvids.gui.filedialog.asksaveasfilename",
+                            lambda **kw: str(saved))
+        app._compare_with_good()
+        return saved
+
+    def test_the_file_appears_where_it_was_asked_for(
+            self, app, fixture_timeline: Path, tmp_path: Path, monkeypatch) -> None:
+        saved = self.compare_and_save(app, fixture_timeline, tmp_path, monkeypatch)
+        assert saved.exists(), "the operator chose a filename and got no file"
+        assert saved.stat().st_size > 0
+
+    def test_what_lands_is_the_bundle_and_is_valid_json(
+            self, app, fixture_timeline: Path, tmp_path: Path, monkeypatch) -> None:
+        import json
+
+        saved = self.compare_and_save(app, fixture_timeline, tmp_path, monkeypatch)
+        bundle = json.loads(saved.read_text(encoding="utf-8"))
+        assert "summary" in bundle and "scored_pairs" in bundle
+        assert bundle["anonymous"] is True
+
+    def test_nothing_went_wrong_quietly(
+            self, app, fixture_timeline: Path, tmp_path: Path, monkeypatch) -> None:
+        self.compare_and_save(app, fixture_timeline, tmp_path, monkeypatch)
+        errors = [d for d in self.dialogs if d[0] == "showerror"]
+        assert errors == [], f"it reported: {errors}"
+
+    def test_declining_to_send_writes_nothing(
+            self, app, fixture_timeline: Path, tmp_path: Path, monkeypatch) -> None:
+        saved = self.compare_and_save(app, fixture_timeline, tmp_path, monkeypatch,
+                                      send=False)
+        assert not saved.exists()
+
+    def test_a_save_that_fails_says_so(
+            self, app, fixture_timeline: Path, tmp_path: Path, monkeypatch) -> None:
+        # The silence was the worse half of the bug: a failure must be visible.
+        def refuse(self, *a, **kw):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Path, "write_text", refuse)
+        saved = self.compare_and_save(app, fixture_timeline, tmp_path, monkeypatch)
+        assert not saved.exists()
+        assert [d for d in self.dialogs if d[0] == "showerror"], (
+            "a failed save told the operator nothing")

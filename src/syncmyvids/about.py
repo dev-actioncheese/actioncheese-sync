@@ -75,6 +75,16 @@ COMPANION_ICON = "actioncheese-icon.png"
 # --------------------------------------------------------------------------- #
 
 CHANGELOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("0.4.2", "2026-10-26", (
+        "Saving a comparison report did nothing at all: you chose a filename "
+        "and got no file and no message. It saves now.",
+        "An error in the window itself is shown instead of discarded. That "
+        "silence is why the above went unnoticed.",
+        "This window now waits for a real release rather than appearing for "
+        "every hotfix, and when it does appear it lists every change since "
+        "the last one you read -- bug fixes included. Help > What's New has "
+        "the full history at any time.",
+    )),
     ("0.4.1", "2026-10-26", (
         "Fixed a crash at the end of every sync in 0.4.0. The timeline was "
         "written correctly before it, so a run that hit it lost nothing but "
@@ -123,6 +133,24 @@ def changes_since(version: str) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
     from .updates import is_newer
 
     return tuple(entry for entry in CHANGELOG if is_newer(entry[0], version))
+
+
+def is_significant(old: str, new: str) -> bool:
+    """Is going from ``old`` to ``new`` worth interrupting somebody for?
+
+    A changed major or minor number is; a patch is not. Hotfixes can land
+    several days in a row, and a window in front of the app each time teaches
+    people to dismiss it without reading. The fixes are not hidden -- they
+    accumulate and appear in full at the next real release, and Help > What's
+    New always has the lot.
+    """
+    from .updates import parse_version
+
+    before, after = parse_version(old), parse_version(new)
+    # Pad, so "0.5" and "0.5.0" compare as the same release.
+    before = (before + (0, 0))[:2]
+    after = (after + (0, 0))[:2]
+    return after > before
 
 
 def changelog_text(entries=None) -> str:

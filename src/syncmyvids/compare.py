@@ -21,6 +21,7 @@ default, and the bundle is plain JSON they can read before sending it.
 from __future__ import annotations
 
 import hashlib
+import json
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -174,6 +175,35 @@ def compare(ours: Timeline, theirs: Timeline) -> Comparison:
     return result
 
 
+def _number(value):
+    """A float the json module will accept, or None."""
+    return None if value is None else float(value)
+
+
+def _flag(value):
+    """A bool the json module will accept, or None."""
+    return None if value is None else bool(value)
+
+
+def _plain(value):
+    """Last resort for json.dumps: unwrap anything numpy-shaped.
+
+    judge_attempts already converts what we know about. This catches what we
+    do not, because the alternative is what happened once: a scalar from the
+    matcher reaching json, raising, and the tester's report never being
+    written at all.
+    """
+    item = getattr(value, "item", None)
+    if callable(item):
+        return item()
+    raise TypeError(f"cannot serialise {type(value).__name__}")
+
+
+def to_json(bundle: dict) -> str:
+    """The bundle as text, ready to write."""
+    return json.dumps(bundle, indent=2, default=_plain)
+
+
 def judge_attempts(attempts: Iterable[dict], theirs: dict[str, ClipPlacement],
                    ) -> list[dict]:
     """Mark every pair we scored as right or wrong against the good timeline.
@@ -196,15 +226,19 @@ def judge_attempts(attempts: Iterable[dict], theirs: dict[str, ClipPlacement],
             continue
         truth = theirs[b_name].start - theirs[a_name].start
         error = implied - truth
+        # Plain Python, deliberately. These values come from the matcher, so
+        # they are numpy scalars: np.float64 passes for a float and would go
+        # out unnoticed, but np.bool_ is not a bool and json refuses it --
+        # and names itself "bool" in the error, so the message misleads too.
         judged.append({
             "a": a_name,
             "b": b_name,
-            "confidence": attempt.get("confidence"),
-            "peak_ratio": attempt.get("peak_ratio"),
-            "overlap_seconds": attempt.get("overlap_seconds"),
-            "accepted": attempt.get("accepted"),
-            "error_seconds": round(error, 4),
-            "correct": abs(error) <= FRAME_TOLERANCE_SECONDS,
+            "confidence": _number(attempt.get("confidence")),
+            "peak_ratio": _number(attempt.get("peak_ratio")),
+            "overlap_seconds": _number(attempt.get("overlap_seconds")),
+            "accepted": _flag(attempt.get("accepted")),
+            "error_seconds": round(float(error), 4),
+            "correct": bool(abs(error) <= FRAME_TOLERANCE_SECONDS),
         })
     return judged
 

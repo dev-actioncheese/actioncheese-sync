@@ -217,3 +217,53 @@ class TestKeepingTheBundleSendable:
         tables = compare.summarise_pairs(self.judged(40, 1000))
         band = tables["peak_ratio"]["6-10"]
         assert band["right"] == 40 and band["wrong"] == 0
+
+
+class TestTheBundleCanActuallyBeWritten:
+    """The matcher hands us numpy scalars, and json refuses some of them.
+
+    This was shipped broken: `correct` came out of a numpy comparison as
+    np.bool_, which is not a bool, so json raised and the tester's report was
+    never written -- while np.float64 beside it passed for a float and hid how
+    close to the surface the problem was. Every earlier test built its bundle
+    without a report, which is the one argument that carries these values.
+    """
+
+    def judged(self, tmp_path: Path):
+        np = pytest.importorskip("numpy")
+        theirs = compare.placements(timeline(tmp_path, "t.xml", [
+            ("a.mov", "camA", 0.0), ("b.mov", "camB", 10.0)]))
+        return np, compare.judge_attempts([{
+            "a_file": "a.mov", "b_file": "b.mov",
+            "confidence": np.float32(0.19), "peak_ratio": np.float64(17.0),
+            "overlap_seconds": np.float32(900.0),
+            "delta_seconds": np.float64(10.0), "accepted": np.bool_(False),
+        }], theirs)
+
+    def test_numpy_scalars_do_not_survive_into_the_report(self, tmp_path: Path) -> None:
+        np, judged = self.judged(tmp_path)
+        for key, value in judged[0].items():
+            assert type(value) in (str, float, bool, int, type(None)), (
+                f"{key} is {type(value).__module__}.{type(value).__name__}, "
+                f"which json may refuse")
+
+    def test_a_judged_pair_serialises_with_no_help(self, tmp_path: Path) -> None:
+        # Plain dumps, no default= hook: the values themselves must be clean.
+        _, judged = self.judged(tmp_path)
+        assert json.loads(json.dumps(judged)) == judged
+
+    def test_the_flags_stay_real_booleans(self, tmp_path: Path) -> None:
+        # np.bool_(False) is falsy but `is False` is untrue of it, and code
+        # downstream counts with `if row["correct"]`.
+        _, judged = self.judged(tmp_path)
+        assert judged[0]["correct"] is True
+        assert judged[0]["accepted"] is False
+
+    def test_to_json_rescues_a_scalar_we_failed_to_convert(self) -> None:
+        np = pytest.importorskip("numpy")
+        text = compare.to_json({"odd": np.float32(1.5), "flag": np.bool_(True)})
+        assert json.loads(text) == {"odd": 1.5, "flag": True}
+
+    def test_to_json_still_refuses_what_it_cannot_convert(self) -> None:
+        with pytest.raises(TypeError):
+            compare.to_json({"path": object()})

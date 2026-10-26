@@ -604,21 +604,45 @@ class SyncApp:
 
     # ----------------------------------------------------------------- changes
     def _show_changes_once(self) -> None:
-        """What changed, the first time a new version is opened.
+        """What changed, once, when a release is worth interrupting for.
 
-        Once, and then not again: the version is recorded as soon as it is
-        shown. A fresh install sees nothing, because nothing has changed for
-        somebody who has never run an older one.
+        Shown for a new major or minor version, not for a patch. Hotfixes can
+        land several days running, and a window every time is a window people
+        learn to dismiss unread.
+
+        Nothing is lost by waiting. The version is recorded only when the
+        window is actually shown, so the patches in between stay pending and
+        appear together at the next real release -- every fix since whatever
+        the operator last read about, not merely the newest one. Help > What's
+        New has the full history regardless.
+
+        A fresh install sees nothing, because nothing has changed for somebody
+        who has never run an older one.
         """
         seen = self._prefs.get("seen_version")
-        self._prefs["seen_version"] = __version__
-        _save_prefs(self._prefs)
-        if not seen or seen == __version__:
+        if not seen:
+            self._remember_shown()
+            return
+        if seen == __version__:
             return
         entries = about.changes_since(seen)
-        if entries:
-            self._text_window(f"What's new in {__version__}",
-                              about.changelog_text(entries), width=72, height=22)
+        if not entries:
+            # Nothing to say -- or they moved back a version. Either way,
+            # catch the record up so it does not keep asking.
+            self._remember_shown()
+            return
+        if not about.is_significant(seen, __version__):
+            return  # A patch. Keep the notes pending.
+        self._remember_shown()
+        title = (f"What's new in {__version__}" if len(entries) == 1
+                 else f"What's new since {seen}")
+        self._text_window(title, about.changelog_text(entries),
+                          width=72, height=22)
+
+    def _remember_shown(self) -> None:
+        """Record this version as read, so the window does not return."""
+        self._prefs["seen_version"] = __version__
+        _save_prefs(self._prefs)
 
     def show_changelog(self) -> None:
         """Every change in every version, whenever it is wanted."""
@@ -678,7 +702,14 @@ class SyncApp:
             initialfile=suggested, initialdir=self._last_dir() or "")
         if not where:
             return
-        Path(where).write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+        try:
+            Path(where).write_text(compare.to_json(bundle), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 - say so; do not vanish
+            self._write(f"Could not write the comparison: {exc}")
+            messagebox.showerror(
+                "Could not save the comparison",
+                f"{exc}\n\nNothing was written to {where}.")
+            return
         self._write(f"Comparison written to {where}")
         subject = urllib.parse.quote(f"{about.APP_NAME} {__version__} - sync comparison")
         body = urllib.parse.quote(
@@ -1308,8 +1339,27 @@ def _make_root() -> "tk.Tk":
         return tk.Tk()
 
 
+def _report_exception(root: "tk.Tk"):
+    """Show what went wrong in a menu or button handler.
+
+    Tk's default prints the traceback to stderr. Inside a bundled .app there
+    is no stderr to read, so a failure on the UI thread leaves the operator
+    looking at a window that did nothing and said nothing -- which is exactly
+    how a report that failed to save looked like a report that saved.
+    """
+    def handler(exc_type, exc, tb) -> None:
+        text = "".join(traceback.format_exception(exc_type, exc, tb))
+        logging.getLogger("syncmyvids").error("unhandled in UI: %s", text)
+        messagebox.showerror(
+            "Something went wrong",
+            f"{exc_type.__name__}: {exc}\n\nThe action did not complete. If "
+            f"you can, send this to {about.BUG_EMAIL}:\n\n{text[-1500:]}")
+    return handler
+
+
 def main() -> int:
     root = _make_root()
+    root.report_callback_exception = _report_exception(root)
     try:
         root.call("::tk::unsupported::MacWindowStyle", "style", root, "document")
     except tk.TclError:
