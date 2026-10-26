@@ -66,6 +66,76 @@ COMPANION_STORE_NOTE = "App Store: coming soon"
 COMPANION_ICON = "actioncheese-icon.png"
 
 
+# --------------------------------------------------------------------------- #
+# What changed, and when.
+#
+# The single source: the app shows it, and `actioncheese-sync changelog` prints
+# it for the repository. Keeping a second copy in a markdown file would mean
+# keeping them in step, which nobody ever does.
+# --------------------------------------------------------------------------- #
+
+CHANGELOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("0.4.0", "2026-10-26", (
+        "Drag folders and timelines straight onto the input list.",
+        "Help > Compare With a Correct Timeline measures a sync against one you "
+        "trust, and writes a report you can send back without sending any "
+        "footage. It is how a bad sync gets diagnosed and fixed.",
+        "This window, listing what changed, shown once after an update.",
+        "Corrected a sentence in Help that claimed there is no ActionCheese "
+        "server. There is one, for the website; the app simply never contacts it.",
+    )),
+    ("0.3.0", "2026-10-25", (
+        "A bar across the top when a newer version exists, with a button to it. "
+        "It asks GitHub once a day, sends nothing about you, and can be turned "
+        "off under Help.",
+    )),
+    ("0.2.0", "2026-10-24", (
+        "Pick several camera folders at once instead of one trip through the "
+        "dialog per camera.",
+        "The folder dialog opens where you left off, on the shoot, so the next "
+        "camera is a click away.",
+        "Merge joins the folders of one camera that filled several cards. Clips "
+        "from one device are never matched against each other, and that has to "
+        "hold across the card boundary too.",
+        "Timelines exported on Windows are read and written correctly.",
+    )),
+    ("0.1.0", "2026-10-22", (
+        "First public release. Waveform multicam sync for Final Cut Pro 7 XML, "
+        "taking timelines or folders of camera cards.",
+        "Recorder drift measured and corrected; picture is never resampled.",
+        "Markers carried through and kept on the moment they mark.",
+        "An ActionCheese shoot folder arrives with its phones already in sync.",
+    )),
+)
+
+
+def changes_since(version: str) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    """Every entry newer than ``version``.
+
+    Compared as numbers: "0.10.0" sorts before "0.9.0" as text, which would
+    hide every release after the ninth.
+    """
+    from .updates import is_newer
+
+    return tuple(entry for entry in CHANGELOG if is_newer(entry[0], version))
+
+
+def changelog_text(entries=None) -> str:
+    """The changelog as plain text, for the window and the terminal."""
+    import textwrap
+
+    lines: list[str] = []
+    for version, date, changes in (CHANGELOG if entries is None else entries):
+        lines.append(f"{APP_NAME} {version}   {date}")
+        lines.append("")
+        for change in changes:
+            wrapped = textwrap.wrap(change, width=66)
+            lines.append(f"  \u2022 {wrapped[0]}")
+            lines += [f"    {line}" for line in wrapped[1:]]
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 CREDITS = (
     "Built on ffmpeg for decoding, and NumPy and SciPy for the correlation maths. "
     "The envelope-correlation approach follows the align-videos-by-sound and "

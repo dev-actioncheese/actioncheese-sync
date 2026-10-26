@@ -11,6 +11,10 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "lxml>=4.9",
+    # Drag and drop. Tk has none of its own; this carries the tkdnd extension
+    # and its own PyInstaller hook. Optional at runtime -- the app falls back
+    # to the buttons if it is missing.
+    "tkinterdnd2>=0.4",
 ]
 
 [project.optional-dependencies]

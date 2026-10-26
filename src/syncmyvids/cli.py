@@ -140,6 +140,8 @@ def _build_parser() -> argparse.ArgumentParser:
     compare_cmd.add_argument("--note", default="",
                              help="anything you want to tell us about this project")
 
+    subparsers.add_parser("changelog", help="what changed, in every version")
+
     subparsers.add_parser("guide", help="how to use syncmyvids, and what each option does")
     subparsers.add_parser("about", help="version, author and how to report a bug")
 
@@ -294,6 +296,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "about":
             print(about.about_text())
+            return 0
+        if args.command == "changelog":
+            print(about.changelog_text())
             return 0
         if args.command == "guide":
             print(about.HELP_TEXT)

@@ -540,3 +540,95 @@ class TestRememberingWhereYouWere:
     def test_a_live_location_is_offered(self, app, tmp_path: Path) -> None:
         app._prefs["last_dir"] = str(tmp_path)
         assert app._last_dir() == str(tmp_path)
+
+
+class TestWhatChanged:
+    """Shown once after an update, and available for good afterwards."""
+
+    def test_a_fresh_install_is_shown_nothing(self, app, monkeypatch) -> None:
+        # Nothing has changed for somebody who never ran an older version.
+        shown: list[str] = []
+        monkeypatch.setattr(app, "_text_window",
+                            lambda title, body, **kw: shown.append(title))
+        app._prefs.pop("seen_version", None)
+        app._show_changes_once()
+        assert shown == []
+
+    def test_after_an_update_it_appears_once(self, app, monkeypatch) -> None:
+        from syncmyvids import __version__
+
+        shown: list[str] = []
+        monkeypatch.setattr(app, "_text_window",
+                            lambda title, body, **kw: shown.append(title))
+        app._prefs["seen_version"] = "0.1.0"
+        app._show_changes_once()
+        assert len(shown) == 1 and __version__ in shown[0]
+
+        app._show_changes_once()          # the next launch
+        assert len(shown) == 1, "it must not nag"
+
+    def test_it_lists_only_what_is_new_to_you(self) -> None:
+        from syncmyvids import about
+
+        versions = [v for v, _, _ in about.changes_since("0.2.0")]
+        assert "0.2.0" not in versions and "0.1.0" not in versions
+        assert "0.3.0" in versions
+
+    def test_the_whole_history_is_available_any_time(self, app, monkeypatch) -> None:
+        from syncmyvids import about
+
+        shown: list[str] = []
+        monkeypatch.setattr(app, "_text_window",
+                            lambda title, body, **kw: shown.append(body))
+        app.show_changelog()
+        for version, _, _ in about.CHANGELOG:
+            assert version in shown[0], f"{version} missing from the full log"
+
+    def test_every_entry_has_a_date_and_something_to_say(self) -> None:
+        import re
+        from syncmyvids import about
+
+        for version, date, changes in about.CHANGELOG:
+            assert re.fullmatch(r"\d+\.\d+\.\d+", version), version
+            assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", date), f"{version}: {date}"
+            assert changes and all(c.strip() for c in changes), version
+
+    def test_the_current_version_is_in_the_log(self) -> None:
+        # Releasing without saying what changed is how a changelog dies.
+        from syncmyvids import __version__, about
+
+        assert __version__ in [v for v, _, _ in about.CHANGELOG]
+
+
+class TestDroppingFiles:
+    def drop(self, app, payload: str):
+        class Event:
+            data = payload
+        app._on_drop(Event())
+
+    def test_folders_and_timelines_are_taken(self, app, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(app, "_preview", lambda: None)
+        folder = tmp_path / "cam"; folder.mkdir()
+        xml = tmp_path / "t.xml"; xml.write_text("<xmeml/>", encoding="utf-8")
+        self.drop(app, f"{folder} {xml}")
+        assert {p.name for p in app.inputs} == {"cam", "t.xml"}
+
+    def test_a_path_with_spaces_survives(self, app, tmp_path: Path, monkeypatch) -> None:
+        # Tcl delivers these in braces; splitting on whitespace would break
+        # every wedding folder ever named.
+        monkeypatch.setattr(app, "_preview", lambda: None)
+        folder = tmp_path / "BESLIU 10 OKT"; folder.mkdir()
+        self.drop(app, "{%s}" % folder)
+        assert [p.name for p in app.inputs] == ["BESLIU 10 OKT"]
+
+    def test_anything_else_is_ignored_and_said_so(self, app, tmp_path: Path,
+                                                  monkeypatch) -> None:
+        monkeypatch.setattr(app, "_preview", lambda: None)
+        photo = tmp_path / "shot.jpg"; photo.write_bytes(b"x")
+        self.drop(app, str(photo))
+        assert app.inputs == []
+
+    def test_a_malformed_payload_does_not_crash(self, app, monkeypatch) -> None:
+        monkeypatch.setattr(app, "_preview", lambda: None)
+        self.drop(app, "{unclosed brace")
+        assert app.inputs == []

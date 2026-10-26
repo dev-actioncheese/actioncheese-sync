@@ -130,6 +130,10 @@ class SyncApp:
         #: standing for one camera that filled several cards. The list is the
         #: model; the listbox only shows it.
         self.inputs: list = []
+        #: Set once a widget really accepts drops. The hint below the list is
+        #: written from this, so the window never offers something the build
+        #: cannot do.
+        self.drops_enabled = False
         self.output_path = tk.StringVar()
         self.trust_synced = tk.BooleanVar(value=False)
         self._prefs = _load_prefs()
@@ -159,6 +163,7 @@ class SyncApp:
         self._check_ffmpeg()
         self._register_open_handler(root)
         root.after(100, self._drain)
+        root.after(400, self._show_changes_once)
         root.after(1200, self._start_update_check)
 
     # -------------------------------------------------------------- appearance
@@ -330,6 +335,8 @@ class SyncApp:
         helpmenu = tk.Menu(menubar, name="help", tearoff=0)
         helpmenu.add_command(label=f"{about.APP_NAME} Help", command=self.show_help)
         helpmenu.add_separator()
+        helpmenu.add_command(label="What's New", command=self.show_changelog)
+        helpmenu.add_separator()
         helpmenu.add_command(label="Compare With a Correct Timeline…",
                              command=self._compare_with_good)
         helpmenu.add_separator()
@@ -459,6 +466,8 @@ class SyncApp:
         self.input_list.configure(yscrollcommand=input_scroll.set)
         self.input_list.bind("<<ListboxSelect>>",
                              lambda _e: self._update_merge_button())
+        self._enable_drops(self.input_list)
+        self._enable_drops(files)
 
         buttons = ttk.Frame(files)
         buttons.grid(row=0, column=1, sticky="n", padx=(8, 0))
@@ -473,13 +482,10 @@ class SyncApp:
         ttk.Button(buttons, text="Remove", command=self._remove_inputs, width=12
                    ).grid(row=3, column=0, sticky="ew", pady=(4, 0))
 
-        ttk.Label(files,
-                  text="One folder per camera or recorder. Pick several at once. "
-                       "An ActionCheese shoot folder brings its cameras in already "
-                       "in sync. Select two folders and press Merge if one camera "
-                       "filled both cards.",
-                  foreground="#94A3B8", wraplength=620, justify="left"
-                  ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.input_hint = ttk.Label(
+            files, text="", foreground=INK_DIM, wraplength=620, justify="left")
+        self.input_hint.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self._write_input_hint()
 
         ttk.Label(files, text="Output XML").grid(row=2, column=0, sticky="w", pady=(8, 0), padx=(0, 8))
         output_row = ttk.Frame(files)
@@ -595,6 +601,29 @@ class SyncApp:
 
         ttk.Label(outer, textvariable=self.status, anchor="w",
                   foreground=INK_DIM).grid(row=5, column=0, sticky="ew", pady=(8, 0))
+
+    # ----------------------------------------------------------------- changes
+    def _show_changes_once(self) -> None:
+        """What changed, the first time a new version is opened.
+
+        Once, and then not again: the version is recorded as soon as it is
+        shown. A fresh install sees nothing, because nothing has changed for
+        somebody who has never run an older one.
+        """
+        seen = self._prefs.get("seen_version")
+        self._prefs["seen_version"] = __version__
+        _save_prefs(self._prefs)
+        if not seen or seen == __version__:
+            return
+        entries = about.changes_since(seen)
+        if entries:
+            self._text_window(f"What's new in {__version__}",
+                              about.changelog_text(entries), width=72, height=22)
+
+    def show_changelog(self) -> None:
+        """Every change in every version, whenever it is wanted."""
+        self._text_window(f"{about.APP_NAME} — all changes",
+                          about.changelog_text(), width=72, height=30)
 
     # ------------------------------------------------------------------ compare
     def _compare_with_good(self) -> None:
@@ -910,6 +939,59 @@ class SyncApp:
             self._remember_dir(chosen[0])
             self._add_inputs(chosen)
 
+    def _write_input_hint(self) -> None:
+        """The line under the list, which only offers what this build can do."""
+        drag = "Drag them in, or pick several at once. " if self.drops_enabled \
+            else "Pick several at once. "
+        self.input_hint.configure(
+            text="One folder per camera or recorder. " + drag +
+                 "An ActionCheese shoot folder brings its cameras in already in "
+                 "sync. Select two folders and press Merge if one camera filled "
+                 "both cards.")
+
+    def _enable_drops(self, widget: tk.Misc) -> None:
+        """Let folders and timelines be dropped straight onto the list.
+
+        Tk has no drag and drop of its own; this needs the tkdnd extension,
+        which tkinterdnd2 carries. It is optional on purpose -- without it the
+        app is exactly as it was, with the buttons -- because a missing
+        extension must not be the difference between a working app and a dead
+        one.
+        """
+        try:
+            from tkinterdnd2 import DND_FILES
+        except ImportError:
+            return
+        try:
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind("<<Drop>>", self._on_drop)
+        except (AttributeError, tk.TclError):
+            # The root window was not built with DnD support.
+            log.debug("drag and drop unavailable")
+            return
+        self.drops_enabled = True
+
+    def _on_drop(self, event) -> None:
+        """Paths dropped on the list.
+
+        The payload is a Tcl list, so a path with a space in it arrives in
+        braces. splitlist unpicks that properly; splitting on whitespace would
+        break every wedding folder ever named.
+        """
+        try:
+            dropped = [Path(p) for p in self.root.tk.splitlist(event.data)]
+        except tk.TclError:
+            return
+
+        wanted = [p for p in dropped if p.is_dir() or p.suffix.lower() == ".xml"]
+        ignored = [p.name for p in dropped if p not in wanted]
+        if ignored:
+            self._write(f"Ignored {len(ignored)} item(s) that are not folders or "
+                        f".xml timelines: {', '.join(ignored[:4])}")
+        if wanted:
+            self._remember_dir(wanted[0])
+            self._add_inputs(wanted)
+
     @staticmethod
     def _members(entry) -> list[Path]:
         """An entry's paths, whether it is one or a merged group."""
@@ -1217,8 +1299,17 @@ class _QueueHandler(logging.Handler):
         self.target.put(("log", self.format(record)))
 
 
+def _make_root() -> "tk.Tk":
+    """A root window that accepts file drops, if the extension is there."""
+    try:
+        from tkinterdnd2 import TkinterDnD
+        return TkinterDnD.Tk()
+    except Exception:  # noqa: BLE001 - any failure falls back to plain Tk
+        return tk.Tk()
+
+
 def main() -> int:
-    root = tk.Tk()
+    root = _make_root()
     try:
         root.call("::tk::unsupported::MacWindowStyle", "style", root, "document")
     except tk.TclError:
