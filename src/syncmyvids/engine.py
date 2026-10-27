@@ -50,13 +50,33 @@ class SyncOptions:
     #: 9313 s out. Clipping those ties took that project's internal error from
     #: 7072 s to 487 s and its frame-exact clips from 18 of 41 to 30.
     #:
-    #: It stays deliberately low. The peak ratio is a poor *requirement* on
-    #: reverberant material -- a 1.4 threshold once rejected 9 of 13 correct
-    #: matches, and would discard 14 good pairs on that same wedding. This is
-    #: not "the peak must be tall"; it is "the winner must not be a coin flip".
-    #: For scale: on a healthy four-camera shoot the weakest match that reached
-    #: the solver won by 50%, so this sits nowhere near it.
-    min_peak_ratio: float = 1.05
+    #: 1.05 was the first attempt, chosen from the only two projects we had.
+    #: It is now set from measurement. Following Guilley et al.'s evaluation
+    #: framework for resynchronisation algorithms, windows of real footage
+    #: were shifted by a known amount to make positives, and windows sharing
+    #: no moment at all to make negatives -- thousands of labelled trials
+    #: needing no hand-synced reference. Against those:
+    #:
+    #:     gate   keeps good   admits noise      (dance music / other material)
+    #:     1.05    96% / 100%     34% / 49%
+    #:     1.20    85% / 100%    3.6% / 8.7%
+    #:     1.30    74% / 100%    1.3% / 3.0%
+    #:
+    #: 1.20 cuts the matches accepted between recordings that share nothing by
+    #: roughly ten times, at no cost whatever on ordinary material, where a
+    #: correct match scores 4 to 20 and nothing is near the threshold. The
+    #: cost falls only on music, where even correct matches score 1.0 to 1.8.
+    #:
+    #: That trade is right because the two errors are not equal: a wrong match
+    #: drags a clip minutes out of place, while a rejected one sends it to the
+    #: unsynced tracks where it is visible and quick to place by hand. End to
+    #: end this loses 3 of 28 usable pairs on the wedding and gains a clip
+    #: landing on the exact frame; the four-camera project is unchanged.
+    #:
+    #: Do not push it much higher. The ratio is a poor requirement on
+    #: reverberant material -- 1.4 once rejected 9 of 13 correct matches --
+    #: and 1.30 costs four more good pairs for no further gain.
+    min_peak_ratio: float = 1.20
     corroborate: bool = True
     corroboration_floor: float = corroborate_module.DEFAULT_FLOOR
     """Weak matches down to here get a second chance if they survive a
