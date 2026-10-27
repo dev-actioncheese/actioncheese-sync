@@ -75,6 +75,23 @@ COMPANION_ICON = "actioncheese-icon.png"
 # --------------------------------------------------------------------------- #
 
 CHANGELOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("0.4.4", "2026-10-27", (
+        "Fewer clips put in the wrong place. The test a match has to pass "
+        "was set from thousands of measurements on real footage rather than "
+        "from the two shoots we happened to have. Matches between recordings "
+        "that share no moment at all used to get through about a third of the "
+        "time; now it is closer to one in thirty. On ordinary footage nothing "
+        "changes -- correct matches there pass with room to spare. On loud "
+        "repetitive music a few more clips will arrive unsynced instead, "
+        "which is the right trade: an unsynced clip sits on its own track "
+        "where you can see it and place it in seconds, while a wrongly "
+        "matched one can land minutes away and look deliberate.",
+        "Measured along the way, and worth knowing when you shoot: the sync "
+        "needs real overlap to work. With 6 seconds of common sound it finds "
+        "the right alignment about one time in six; with a minute, nine times "
+        "in ten; with two minutes, almost always. If you restart a recorder "
+        "mid-event, let it run while a camera is rolling.",
+    )),
     ("0.4.3", "2026-10-27", (
         "Better sync on music. A correlation peak no better than the next "
         "one along is no longer treated as a match. Dance-floor music repeats, "
