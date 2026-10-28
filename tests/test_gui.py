@@ -644,6 +644,39 @@ class TestWhatChanged:
         app._show_changes_once()
         assert app._prefs["seen_version"] == __version__
 
+    def test_the_window_offers_the_companion_app(self, app, monkeypatch) -> None:
+        # 0.5.0 announces that the companion app shipped, so the window that
+        # carries the announcement has to be able to act on it. A line of
+        # text telling somebody an app exists, with no way to reach it, is
+        # an advert rather than a feature.
+        from syncmyvids import about
+
+        passed: list = []
+        monkeypatch.setattr(
+            app, "_text_window",
+            lambda title, body, **kw: passed.append(kw.get("action")))
+        app._prefs["seen_version"] = "0.1.0"
+        app._show_changes_once()
+        assert passed and passed[0] is not None
+        label, command = passed[0]
+        assert label == about.COMPANION_BUTTON
+
+        opened: list[str] = []
+        monkeypatch.setattr("syncmyvids.gui.webbrowser.open",
+                            lambda url: opened.append(url))
+        command()
+        assert opened == [about.COMPANION_URL]
+
+    def test_the_launch_is_in_the_notes_people_will_see(self) -> None:
+        from syncmyvids import __version__, about
+
+        newest = about.changelog_text(about.changes_since("0.4.0")).lower()
+        assert "app store" in newest, (
+            "0.5.0 exists to carry the companion app's launch")
+        # And the accumulated patches must still be there beside it.
+        for version in ("0.4.4", "0.4.3", "0.4.2", "0.4.1"):
+            assert version in newest, f"{version} dropped out of the window"
+
     def test_which_releases_count_as_worth_showing(self) -> None:
         from syncmyvids import about
 

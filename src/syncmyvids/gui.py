@@ -369,7 +369,8 @@ class SyncApp:
         )
         webbrowser.open(f"mailto:{about.BUG_EMAIL}?subject={subject}&body={body}")
 
-    def _text_window(self, title: str, body: str, *, width: int, height: int) -> None:
+    def _text_window(self, title: str, body: str, *, width: int, height: int,
+                     action: Optional[tuple[str, object]] = None) -> None:
         window = tk.Toplevel(self.root)
         window.title(title)
         window.transient(self.root)
@@ -390,6 +391,10 @@ class SyncApp:
 
         buttons = ttk.Frame(frame)
         buttons.grid(row=1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        if action is not None:
+            label, command = action
+            ttk.Button(buttons, text=label, style="Cheese.TButton",
+                       command=command).pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text=f"Email {about.BUG_EMAIL}",
                    command=self._report_bug).pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="Close", command=window.destroy).pack(side="left")
@@ -637,7 +642,8 @@ class SyncApp:
         title = (f"What's new in {__version__}" if len(entries) == 1
                  else f"What's new since {seen}")
         self._text_window(title, about.changelog_text(entries),
-                          width=72, height=22)
+                          width=72, height=22,
+                          action=(about.COMPANION_BUTTON, self._open_companion))
 
     def _remember_shown(self) -> None:
         """Record this version as read, so the window does not return."""
@@ -647,7 +653,8 @@ class SyncApp:
     def show_changelog(self) -> None:
         """Every change in every version, whenever it is wanted."""
         self._text_window(f"{about.APP_NAME} — all changes",
-                          about.changelog_text(), width=72, height=30)
+                          about.changelog_text(), width=72, height=30,
+                          action=(about.COMPANION_BUTTON, self._open_companion))
 
     # ------------------------------------------------------------------ compare
     def _compare_with_good(self) -> None:

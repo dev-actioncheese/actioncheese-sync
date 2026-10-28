@@ -80,6 +80,16 @@ SYNC_URL = "https://actioncheese.com/sync.html"
 # --------------------------------------------------------------------------- #
 
 CHANGELOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("0.5.0", "2026-10-28", (
+        "ActionCheese - Multicam Remote is on the App Store. The app this one "
+        "was built as a companion to is out: up to four iPhones rolling "
+        "together on one word, with shared timecode and no Wi-Fi, no laptop "
+        "and no crew. A shoot folder from it opens here already in sync. Free "
+        "to start -- the button below goes straight to it.",
+        "Everything below arrived in 0.4.1 to 0.4.4 while this window was "
+        "keeping quiet about patches. It is all in Help > What's New too, "
+        "whenever you want it again.",
+    )),
     ("0.4.4", "2026-10-27", (
         "Fewer clips put in the wrong place. The test a match has to pass "
         "was set from thousands of measurements on real footage rather than "
