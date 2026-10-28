@@ -57,13 +57,18 @@ COMPANION_POINTS = (
     "Cut and export each take right on the deck phone",
 )
 COMPANION_PRICING = "Free to start. Pro from $39.99/year."
-COMPANION_URL = "https://actioncheese.com/"
-COMPANION_BUTTON = "Learn more"
-#: Replaced by the App Store link at launch. Kept as one constant so that is a
-#: one-line change rather than a hunt through the layout code.
-COMPANION_STORE_NOTE = "App Store: coming soon"
+#: The companion iOS app on the App Store, live since 28 October 2026.
+COMPANION_URL = "https://apps.apple.com/app/id6820252527"
+COMPANION_BUTTON = "Go to the App Store"
 #: The icon file, copied from the ActionCheese project into this repo's assets.
 COMPANION_ICON = "actioncheese-icon.png"
+
+#: This app's own page, for the update banner when a release carries no URL
+#: of its own. Deliberately not COMPANION_URL: that now points at the
+#: companion iPhone app on the App Store, and this is a Mac app that does not
+#: come from there -- sending someone chasing an update to an iOS listing
+#: would be worse than sending them nowhere.
+SYNC_URL = "https://actioncheese.com/sync.html"
 
 
 # --------------------------------------------------------------------------- #

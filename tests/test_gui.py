@@ -330,11 +330,6 @@ class TestCompanionSidebar:
         app._toggle_sidebar()
         assert saved and saved[-1]["sidebar_open"] is False
 
-    def test_the_link_is_the_companion_site(self) -> None:
-        from syncmyvids import about
-
-        assert about.COMPANION_URL == "https://actioncheese.com/"
-
     def test_the_button_opens_that_link_and_nothing_else(self, app, monkeypatch) -> None:
         from syncmyvids import about
 
@@ -343,14 +338,38 @@ class TestCompanionSidebar:
         app._open_companion()
         assert opened == [about.COMPANION_URL]
 
-    def test_the_store_note_is_one_constant(self) -> None:
-        # So a launch is a one-line change rather than a hunt through layout.
+    def test_nothing_still_says_coming_soon(self) -> None:
+        # The companion app shipped on 28 October 2026. A panel still
+        # promising it is worse than no panel.
         import inspect
         from syncmyvids import about, gui
 
-        assert about.COMPANION_STORE_NOTE
-        source = inspect.getsource(gui.SyncApp._build_sidebar)
-        assert "coming soon" not in source.lower(), "the note is hard-coded in the layout"
+        for where in (inspect.getsource(gui.SyncApp._build_sidebar),
+                      about.HELP_TEXT, about.changelog_text(),
+                      " ".join(about.COMPANION_POINTS), about.COMPANION_PITCH,
+                      about.COMPANION_BUTTON, about.COMPANION_PRICING):
+            assert "coming soon" not in where.lower()
+        assert not hasattr(about, "COMPANION_STORE_NOTE")
+
+    def test_the_companion_button_leads_to_the_app_store(self) -> None:
+        from syncmyvids import about
+
+        assert about.COMPANION_URL.startswith("https://apps.apple.com/")
+        assert "6820252527" in about.COMPANION_URL
+
+    def test_an_update_is_not_sent_to_the_app_store(self, app, monkeypatch) -> None:
+        # This is a Mac app and does not come from the App Store. The update
+        # banner falls back to COMPANION_URL no longer -- that would send
+        # somebody chasing a Mac update to an iPhone listing.
+        from syncmyvids import about
+
+        opened: list[str] = []
+        monkeypatch.setattr("syncmyvids.gui.webbrowser.open",
+                            lambda url: opened.append(url))
+        app._update_release = None
+        app._open_update()
+        assert opened == [about.SYNC_URL]
+        assert "apps.apple.com" not in about.SYNC_URL
 
     def test_the_wording_lives_in_about(self) -> None:
         from syncmyvids import about

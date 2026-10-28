@@ -5,8 +5,8 @@
 Waveform-based multicam sync for **FCP7 XML (`xmeml`)** timelines — an open, scriptable
 equivalent of PluralEyes 4 / Syncaila.
 
-Companion to **ActionCheese — Multicam Remote**: record the takes there, sync the timeline
-here.
+Companion to **[ActionCheese — Multicam Remote](https://apps.apple.com/app/id6820252527)**:
+record the takes there, sync the timeline here.
 
 Feed it a timeline exported from Premiere Pro (or Resolve, or Media Composer) with one
 camera or recorder per track, **or just the folders off the cards** — one per camera — or

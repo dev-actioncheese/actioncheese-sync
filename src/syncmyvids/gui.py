@@ -781,7 +781,7 @@ class SyncApp:
 
     def _open_update(self) -> None:
         release = getattr(self, "_update_release", None)
-        webbrowser.open(release.url if release else about.COMPANION_URL)
+        webbrowser.open(release.url if release else about.SYNC_URL)
 
     def _dismiss_update(self) -> None:
         """Hide it, and do not raise this same version again."""
@@ -857,8 +857,6 @@ class SyncApp:
         ttk.Button(self.sidebar, text=about.COMPANION_BUTTON,
                    style="Cheese.TButton", command=self._open_companion).grid(
                        row=6, column=0, sticky="ew")
-        ttk.Label(self.sidebar, text=about.COMPANION_STORE_NOTE, foreground=INK_DIM,
-                  font=(UI_FONT, 9)).grid(row=7, column=0, sticky="w", pady=(6, 0))
 
         self._apply_sidebar_state()
 
